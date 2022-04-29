@@ -1138,6 +1138,31 @@ PAGE_SIZE multiple when read back.
 	high limit is used and monitored properly, this limit's
 	utility is limited to providing the final safety net.
 
+  memory.reclaim
+	A write-only nested-keyed file which exists for all cgroups.
+
+	This is a simple interface to trigger memory reclaim in the
+	target cgroup.
+
+	Example::
+
+	  echo "1G" > memory.reclaim
+
+	Please note that the kernel can over or under reclaim from
+	the target cgroup. If less bytes are reclaimed than the
+	specified amount, -EAGAIN is returned.
+
+	The following nested keys are defined.
+
+	  ==========            ================================
+	  swappiness            Swappiness value to reclaim with
+	  ==========            ================================
+
+	Specifying a swappiness value instructs the kernel to perform
+	the reclaim with that swappiness value. Note that this has the
+	same semantics as vm.swappiness applied to memcg reclaim with
+	all the existing limitations and potential future extensions.
+
   memory.oom.group
 	A read-write single value file which exists on non-root
 	cgroups.  The default value is "0".
