@@ -1767,6 +1767,7 @@ static int tcp_zerocopy_receive(struct sock *sk,
 	struct sk_buff *skb = NULL;
 	struct tcp_sock *tp;
 	int ret;
+	struct page *page;
 
 	if (address & (PAGE_SIZE - 1) || address != zc->address)
 		return -EINVAL;
@@ -1817,8 +1818,15 @@ static int tcp_zerocopy_receive(struct sock *sk,
 		}
 		if (frags->size != PAGE_SIZE || frags->page_offset)
 			break;
-		ret = vm_insert_page(vma, address + length,
-				     skb_frag_page(frags));
+		/*
+		 * Only pages a network driver allocated: not a compound
+		 * page and not one that belongs to a mapping (sendfile()
+		 * over loopback puts page cache pages here).
+		 */
+		page = skb_frag_page(frags);
+		if (PageCompound(page) || page->mapping)
+			break;
+		ret = vm_insert_page(vma, address + length, page);
 		if (ret)
 			break;
 		length += PAGE_SIZE;
