@@ -3490,6 +3490,16 @@ int swapcache_prepare(swp_entry_t entry)
 	return __swap_duplicate(entry, SWAP_HAS_CACHE);
 }
 
+/*
+ * Drop the SWAP_HAS_CACHE pin do_swap_page() holds on an entry while it reads
+ * the page of a synchronous device without going through the swap cache.
+ */
+void swapcache_clear(struct swap_info_struct *si, swp_entry_t entry)
+{
+	if (!__swap_entry_free(si, entry, SWAP_HAS_CACHE))
+		free_swap_slot(entry);
+}
+
 struct swap_info_struct *swp_swap_info(swp_entry_t entry)
 {
 	return swap_type_to_swap_info(swp_type(entry));
