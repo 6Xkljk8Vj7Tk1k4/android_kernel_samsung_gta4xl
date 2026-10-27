@@ -973,7 +973,7 @@ int kbase_mem_flags_change(struct kbase_context *kctx, u64 gpu_addr, unsigned in
 	 * & GPU queue ringbuffer and none of them needs to be explicitly marked
 	 * as evictable by Userspace.
 	 */
-	if (reg->flags & KBASE_REG_NO_USER_FREE)
+	if (kbase_va_region_is_no_user_free(kctx, reg))
 		goto out_unlock;
 
 	/* Is the region being transitioning between not needed and needed? */
@@ -1898,9 +1898,9 @@ u64 kbase_mem_alias(struct kbase_context *kctx, u64 *flags, u64 stride,
 			/* validate found region */
 			if (kbase_is_region_invalid_or_free(aliasing_reg))
 				goto bad_handle; /* Not found/already free */
-			if (aliasing_reg->flags & KBASE_REG_DONT_NEED)
+			if (kbase_is_region_shrinkable(aliasing_reg))
 				goto bad_handle; /* Ephemeral region */
-			if (aliasing_reg->flags & KBASE_REG_NO_USER_FREE)
+			if (kbase_va_region_is_no_user_free(kctx, aliasing_reg))
 				goto bad_handle; /* JIT regions can't be
 						  * aliased. NO_USER_FREE flag
 						  * covers the entire lifetime
@@ -2266,7 +2266,7 @@ int kbase_mem_commit(struct kbase_context *kctx, u64 gpu_addr, u64 new_pages)
 	if (0 == (reg->flags & KBASE_REG_GROWABLE))
 		goto out_unlock;
 
-	if (reg->flags & KBASE_REG_ACTIVE_JIT_ALLOC)
+	if (kbase_is_region_shrinkable(reg))
 		goto out_unlock;
 
 	/* Would overflow the VA region */
@@ -2287,11 +2287,9 @@ int kbase_mem_commit(struct kbase_context *kctx, u64 gpu_addr, u64 new_pages)
 
 	if (atomic_read(&reg->cpu_alloc->kernel_mappings) > 0)
 		goto out_unlock;
-	/* can't grow regions which are ephemeral */
-	if (reg->flags & KBASE_REG_DONT_NEED)
-		goto out_unlock;
+	/* Ephemeral (DONT_NEED) regions are rejected by the shrinkable check above. */
 
-	 if (reg->flags & KBASE_REG_NO_USER_FREE)
+	if (kbase_va_region_is_no_user_free(kctx, reg))
 		goto out_unlock;
 
 #ifdef CONFIG_MALI_MEMORY_FULLY_BACKED

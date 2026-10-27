@@ -303,6 +303,8 @@ static inline struct kbase_mem_phy_alloc *kbase_mem_phy_alloc_put(struct kbase_m
  * @jit_usage_id: The last just-in-time memory usage ID for this region.
  * @jit_bin_id:   The just-in-time memory bin this region came from.
  * @va_refcnt:    Number of users of this region. Protected by reg_lock.
+ * @no_user_free_refcnt:    Number of users that want to prevent the region from
+ *                          being freed by userspace. Protected by reg_lock.
  * @heap_info_gpu_addr: Pointer to an object in GPU memory defining an end of
  *                      an allocated region
  *                      The object can be one of:
@@ -418,6 +420,9 @@ struct kbase_va_region {
 
 /* Whilst this flag is set the GPU allocation is not supposed to be freed by
  * user space. The flag will remain set for the lifetime of JIT allocations.
+ */
+/* Superseded on job-manager paths by kbase_va_region::no_user_free_refcnt (r41p0
+ * backport, CVE-2024-4610); only the CSF code still uses this flag bit.
  */
 #define KBASE_REG_NO_USER_FREE      (1ul << 24)
 
@@ -560,6 +565,7 @@ struct kbase_va_region {
 #endif /* MALI_JIT_PRESSURE_LIMIT_BASE */
 
 	int    va_refcnt;
+	int no_user_free_refcnt;
 };
 
 /**
@@ -2201,6 +2207,86 @@ kbase_ctx_reg_zone_get(struct kbase_context *kctx, unsigned long zone_bits)
 	WARN_ON(!kbase_is_ctx_reg_zone(zone_bits));
 
 	return &kctx->reg_zone[KBASE_REG_ZONE_IDX(zone_bits)];
+}
+
+/**
+ * kbase_is_region_shrinkable - Check if a region is "shrinkable".
+ * A shrinkable region is a region for which its backing pages (reg->gpu_alloc->pages)
+ * can be freed at any point, even though the kbase_va_region structure itself
+ * may have been refcounted.
+ * Regions that aren't on a shrinker, but could be shrunk at any point in future
+ * without warning are still considered "shrinkable" (e.g. Active JIT allocs)
+ *
+ * @reg: Pointer to region
+ *
+ * Return: true if the region is "shrinkable", false if not.
+ */
+static inline bool kbase_is_region_shrinkable(struct kbase_va_region *reg)
+{
+	return (reg->flags & KBASE_REG_DONT_NEED) || (reg->flags & KBASE_REG_ACTIVE_JIT_ALLOC);
+}
+
+/**
+ * kbase_va_region_is_no_user_free - Check if user free is forbidden for the region.
+ * A region that must not be freed by userspace indicates that it is owned by some other
+ * kbase subsystem, for example JIT memory.
+ * Such regions must not be shrunk (i.e. have their backing pages freed), except by the
+ * current owner.
+ * Hence, callers cannot rely on this check alone to determine if a region might be shrunk
+ * by any part of kbase. Instead they should use kbase_is_region_shrinkable().
+ *
+ * @kctx: Pointer to kbase context.
+ * @region: Pointer to region.
+ *
+ * Return: true if userspace cannot free the region, false if userspace can free the region.
+ */
+static inline bool kbase_va_region_is_no_user_free(struct kbase_context *kctx,
+						   struct kbase_va_region *region)
+{
+	lockdep_assert_held(&kctx->reg_lock);
+	return region->no_user_free_refcnt > 0;
+}
+
+/**
+ * kbase_va_region_no_user_free_get - Increment "no user free" refcount for a region.
+ * Calling this function will prevent the region to be shrunk by parts of kbase that
+ * don't own the region (as long as the refcount stays above zero). Refer to
+ * kbase_va_region_is_no_user_free() for more information.
+ *
+ * @kctx: Pointer to kbase context.
+ * @region: Pointer to region (not shrinkable).
+ *
+ * Return: the pointer to the region passed as argument.
+ */
+static inline struct kbase_va_region *
+kbase_va_region_no_user_free_get(struct kbase_context *kctx, struct kbase_va_region *region)
+{
+	lockdep_assert_held(&kctx->reg_lock);
+
+	WARN_ON(kbase_is_region_shrinkable(region));
+	WARN_ON(region->no_user_free_refcnt == INT_MAX);
+
+	/* non-atomic as kctx->reg_lock is held */
+	region->no_user_free_refcnt++;
+
+	return region;
+}
+
+/**
+ * kbase_va_region_no_user_free_put - Decrement "no user free" refcount for a region.
+ *
+ * @kctx: Pointer to kbase context.
+ * @region: Pointer to region (not shrinkable).
+ */
+static inline void kbase_va_region_no_user_free_put(struct kbase_context *kctx,
+						    struct kbase_va_region *region)
+{
+	lockdep_assert_held(&kctx->reg_lock);
+
+	WARN_ON(!kbase_va_region_is_no_user_free(kctx, region));
+
+	/* non-atomic as kctx->reg_lock is held */
+	region->no_user_free_refcnt--;
 }
 
 /**
