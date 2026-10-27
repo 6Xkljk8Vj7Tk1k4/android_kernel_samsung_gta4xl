@@ -1560,6 +1560,7 @@ struct kbase_va_region *kbase_alloc_free_region(struct rb_root *rbtree,
 		return NULL;
 
 	new_reg->va_refcnt = 1;
+	new_reg->no_user_free_refcnt = 0;
 	new_reg->cpu_alloc = NULL; /* no alloc bound yet */
 	new_reg->gpu_alloc = NULL; /* no alloc bound yet */
 	new_reg->rbtree = rbtree;
@@ -2207,7 +2208,7 @@ int kbase_mem_free_region(struct kbase_context *kctx, struct kbase_va_region *re
 		__func__, (void *)reg, (void *)kctx);
 	lockdep_assert_held(&kctx->reg_lock);
 
-	if (reg->flags & KBASE_REG_NO_USER_FREE) {
+	if (kbase_va_region_is_no_user_free(kctx, reg)) {
 		dev_warn(kctx->kbdev->dev, "Attempt to free GPU memory whose freeing by user space is forbidden!\n");
 		return -EINVAL;
 	}
@@ -2428,8 +2429,11 @@ int kbase_update_region_flags(struct kbase_context *kctx,
 	if (flags & BASEP_MEM_PERMANENT_KERNEL_MAPPING)
 		reg->flags |= KBASE_REG_PERMANENT_KERNEL_MAPPING;
 
-	if (flags & BASEP_MEM_NO_USER_FREE)
-		reg->flags |= KBASE_REG_NO_USER_FREE;
+	if (flags & BASEP_MEM_NO_USER_FREE) {
+		kbase_gpu_vm_lock(kctx);
+		kbase_va_region_no_user_free_get(kctx, reg);
+		kbase_gpu_vm_unlock(kctx);
+	}
 
 	if (flags & BASE_MEM_GPU_VA_SAME_4GB_PAGE)
 		reg->flags |= KBASE_REG_GPU_VA_SAME_4GB_PAGE;
@@ -3790,7 +3794,14 @@ static void kbase_jit_destroy_worker(struct work_struct *work)
 		mutex_unlock(&kctx->jit_evict_lock);
 
 		kbase_gpu_vm_lock(kctx);
-		reg->flags &= ~KBASE_REG_NO_USER_FREE;
+		/*
+		 * Incrementing the refcount is prevented on JIT regions.
+		 * If/when this ever changes we would need to compensate
+		 * by implementing "free on putting the last reference",
+		 * but only for JIT regions.
+		 */
+		WARN_ON(reg->no_user_free_refcnt > 1);
+		kbase_va_region_no_user_free_put(kctx, reg);
 		kbase_mem_free_region(kctx, reg);
 		kbase_gpu_vm_unlock(kctx);
 	} while (1);
@@ -4647,7 +4658,8 @@ bool kbase_jit_evict(struct kbase_context *kctx)
 	mutex_unlock(&kctx->jit_evict_lock);
 
 	if (reg) {
-		reg->flags &= ~KBASE_REG_NO_USER_FREE;
+		WARN_ON(reg->no_user_free_refcnt > 1);
+		kbase_va_region_no_user_free_put(kctx, reg);
 		kbase_mem_free_region(kctx, reg);
 	}
 
@@ -4669,7 +4681,8 @@ void kbase_jit_term(struct kbase_context *kctx)
 		list_del(&walker->jit_node);
 		list_del_init(&walker->gpu_alloc->evict_node);
 		mutex_unlock(&kctx->jit_evict_lock);
-		walker->flags &= ~KBASE_REG_NO_USER_FREE;
+		WARN_ON(walker->no_user_free_refcnt > 1);
+		kbase_va_region_no_user_free_put(kctx, walker);
 		kbase_mem_free_region(kctx, walker);
 		mutex_lock(&kctx->jit_evict_lock);
 	}
@@ -4681,7 +4694,8 @@ void kbase_jit_term(struct kbase_context *kctx)
 		list_del(&walker->jit_node);
 		list_del_init(&walker->gpu_alloc->evict_node);
 		mutex_unlock(&kctx->jit_evict_lock);
-		walker->flags &= ~KBASE_REG_NO_USER_FREE;
+		WARN_ON(walker->no_user_free_refcnt > 1);
+		kbase_va_region_no_user_free_put(kctx, walker);
 		kbase_mem_free_region(kctx, walker);
 		mutex_lock(&kctx->jit_evict_lock);
 	}
