@@ -28,19 +28,14 @@
 #include <linux/poll.h>
 #include <linux/version_compat_defs.h>
 
-#ifndef MALI_STRIP_KBASE_DEVELOPMENT
-/* Development builds need to test instrumentation and enable unprivileged
- * processes to acquire timeline streams, in order to avoid complications
- * with configurations across multiple platforms and systems.
- *
- * Release builds, instead, shall deny access to unprivileged processes
- * because there are no use cases where they are allowed to acquire timeline
- * streams, unless they're given special permissions by a privileged process.
+/* Unprivileged processes must not acquire timeline streams: the stream
+ * carries kernel addresses (CVE-2023-26083). Arm's r43p0 driver makes this
+ * the unconditional default; the "development build" default of 1 that the
+ * r38 source drops compile with (MALI_STRIP_KBASE_DEVELOPMENT is never
+ * defined) left the gate open for every process. A privileged process can
+ * still enable it via the module parameter.
  */
-static int kbase_unprivileged_global_profiling = 1;
-#else
 static int kbase_unprivileged_global_profiling;
-#endif
 
 /**
  * kbase_unprivileged_global_profiling_set - set permissions for unprivileged processes
