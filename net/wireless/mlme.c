@@ -30,13 +30,16 @@ void cfg80211_rx_assoc_resp(struct net_device *dev, struct cfg80211_bss *bss,
 	struct cfg80211_connect_resp_params cr;
 
 	memset(&cr, 0, sizeof(cr));
-	cr.status = (int)le16_to_cpu(mgmt->u.assoc_resp.status_code);
 	cr.bssid = mgmt->bssid;
 	cr.bss = bss;
+	cr.timeout_reason = NL80211_TIMEOUT_UNSPECIFIED;
+
+	if (len < offsetof(struct ieee80211_mgmt, u.assoc_resp.variable))
+		goto free_bss;
+	cr.status = (int)le16_to_cpu(mgmt->u.assoc_resp.status_code);
 	cr.resp_ie = mgmt->u.assoc_resp.variable;
 	cr.resp_ie_len =
 		len - offsetof(struct ieee80211_mgmt, u.assoc_resp.variable);
-	cr.timeout_reason = NL80211_TIMEOUT_UNSPECIFIED;
 
 	trace_cfg80211_send_rx_assoc(dev, bss);
 
@@ -46,15 +49,17 @@ void cfg80211_rx_assoc_resp(struct net_device *dev, struct cfg80211_bss *bss,
 	 * and got a reject -- we only try again with an assoc
 	 * frame instead of reassoc.
 	 */
-	if (cfg80211_sme_rx_assoc_resp(wdev, cr.status)) {
-		cfg80211_unhold_bss(bss_from_pub(bss));
-		cfg80211_put_bss(wiphy, bss);
-		return;
-	}
+	if (cfg80211_sme_rx_assoc_resp(wdev, cr.status))
+		goto free_bss;
 
 	nl80211_send_rx_assoc(rdev, dev, buf, len, GFP_KERNEL, uapsd_queues);
 	/* update current_bss etc., consumes the bss reference */
 	__cfg80211_connect_result(dev, &cr, cr.status == WLAN_STATUS_SUCCESS);
+	return;
+
+free_bss:
+	cfg80211_unhold_bss(bss_from_pub(bss));
+	cfg80211_put_bss(wiphy, bss);
 }
 EXPORT_SYMBOL(cfg80211_rx_assoc_resp);
 
