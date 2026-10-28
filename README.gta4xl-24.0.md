@@ -1,10 +1,15 @@
-# gta4xl kernel for LineageOS 24.0 (branch `gta4xl-24.0-bpf510`)
+# gta4xl kernel for LineageOS 24.0 (branch `gta4xl-24.0`)
 
 Linux 4.14.357 for the Samsung Galaxy Tab S6 Lite (`gta4xl` LTE, `gta4xlwifi`,
 Exynos 9611) with the eBPF backports Android 17 expects at the "kernel 5.10"
-level and the cgroup v2 freezer. It is the kernel used by an unofficial
-LineageOS 24.0 build of this device; the ROM side lives in a separate builder
+level, the cgroup v2 freezer and security fixes that nobody else ships for
+this 4.14 kernel any more. It is the kernel used by an unofficial LineageOS
+24.0 build of this device; the ROM side lives in a separate builder
 repository.
+
+`gta4xl-24.0` is the only maintained branch. The former `gta4xl-24.0-bpf510`
+(eBPF port only) and `gta4xl-24.0-mali-cves` (port + security fixes) were
+folded into it; their history is fully contained here.
 
 ## Why
 
@@ -43,10 +48,57 @@ Base: `LineageOS/android_kernel_samsung_gta4xl` `lineage-23.2` at
 3. **Two build fixes in Samsung's Mali `bv_r38p1` driver**: its pre-5.4
    compatibility shims redefined `fallthrough` and `__poll_t`, both now
    provided by the backported core headers.
+4. **24 security fixes** (see below).
 
-Nothing under `arch/arm64/boot/dts` or any Samsung device driver changed, so
-the DTB/DTBO are identical to `lineage-23.2`. `CONFIG_MODULES=y` but no module
+Nothing under `arch/arm64/boot/dts` changed, so the DTB/DTBO are identical to
+`lineage-23.2`. `CONFIG_MODULES=y` but no module
 is built as `=m`.
+
+## Security fixes
+
+Samsung's Exynos 9611 code was last updated with the 2024-05 security patch
+level, and the openela 4.14 stable series stopped at 4.14.357 (2026-03). The
+threat model for picking fixes is remote code execution over Wi-Fi or from a
+web page, i.e. what a host on the same network or a compromised browser
+renderer can reach. Fixes are taken from the oldest stable branch that has
+them (or hand-ported where 4.14 differs, noted in each commit message):
+
+- **Mali GPU (`bv_r38p1`)**: CVE-2024-4610 (CISA KEV; r41p0 no-user-free
+  refcount and shrinkable checks, backported from r42p0), CVE-2023-26083
+  (CISA KEV; the r38 drops compiled the "development" default that lets every
+  app open the kernel-address-leaking timeline stream, now denied by default
+  as in r43p0), and the two driver fixes from Samsung's P615XXSAFYD1 source
+  drop (2 MB ATE only for full blocks, alias teardown offsets).
+  CVE-2022-38181 and CVE-2023-4211 were already fixed by Samsung.
+- **Wi-Fi (cfg80211)**: CVE-2026-98340 (hidden BSS grouping, reachable
+  through scan results), CVE-2026-93805 and CVE-2026-93806 (MLME frame length
+  checks; defence in depth, the SCSC full-MAC driver does not use those paths).
+- **IPv4/IPv6/TCP receive path**: CVE-2026-74598 (RA Route Information
+  length), CVE-2026-72323 (IGMP query UAF), CVE-2026-53275 (MLD query UAF),
+  CVE-2026-53006 (`icmpv6_rcv`), CVE-2026-74398 (DAD failure race),
+  CVE-2026-98255 (old ACKs in the TCP fast path), CVE-2024-56644 (expired PMTU
+  exception dst leak), CVE-2025-68241 (stale fnhe rebinding), CVE-2026-97472
+  (temporary addresses after prefix deprecation).
+- **Browser-sandbox reachable**: binder UAFs CVE-2026-64469 and
+  CVE-2026-64468, CVE-2025-38352 (CISA KEV, exploited on Android; posix CPU
+  timer vs. reaped task), CVE-2026-64370, CVE-2026-98507 (anon_vma publish
+  barrier), CVE-2025-40040 (KSM), CVE-2026-64109 (AF_UNIX `tail->len` UAF;
+  own fix, because 4.14 still appends to the tail skb in
+  `unix_stream_sendpage()`, so tail and length are read under the receive
+  queue lock instead of dropping the length check as 6.6+ does).
+- **USB (CISA KEV, forensic-tool exploit chain)**: CVE-2024-50302 (HID report
+  buffer), CVE-2024-53197 (USB audio).
+
+Every Linux kernel entry in the CISA KEV catalogue was checked: each is fixed
+here, not built in this configuration, or was introduced after 4.14. Still
+open in Mali: CVE-2024-0671 and CVE-2025-0427 (fixed only in DDKs newer than
+any public source drop).
+
+New kernel CVEs are reviewed monthly against the kernel CNA's `vulns.git`,
+limited to files this configuration actually compiles (headers via kbuild's
+`.o.cmd` dependency lists). A newer kernel is not an option: the Exynos 9611
+vendor drivers (Mali, SCSC Wi-Fi/BT, modem, camera, display, audio, TEE) exist
+only for 4.14 and talk to closed userspace blobs over private ioctl ABIs.
 
 ## Building
 
@@ -92,7 +144,9 @@ describe the cgroup2 freezer and `FreezerState` → `cgroup.freeze`.
 
 ## Tested
 
-On a P615 (LTE): boots in under a minute; `cap_last_cap` 40; `use_freezer=true`
+On a P615 (LTE), last with `c1c07c3574ff` (2026-10-28, OTA update of a
+running system): boots in under a minute; no kernel WARN/BUG in dmesg, no Mali
+errors; `cap_last_cap` 40; `use_freezer=true`
 (cached apps frozen); ring buffers pinned under `/sys/fs/bpf`; netd's native
 5.10 stats programs, `BPF_CGROUP_INET_SOCK_RELEASE` and the platform ring
 buffer test load; Wi-Fi (incl. WPA3), Bluetooth, camera, audio, sensors,
@@ -103,6 +157,10 @@ binder has no frozen-state change notifications (SensorService logs
 memevents programs are skipped.
 
 ## Updating
+
+New fixes go on top of `gta4xl-24.0` as single commits with the upstream
+reference (`commit X upstream` / `cherry picked from commit X`), no parallel
+branches.
 
 Merge `PhoenixKernel/linux` `android-4.14-phoenix` again for newer openela
 point releases (the tip after `f515e763d18e` adds AF_XDP and xfrm GSO
