@@ -61,6 +61,18 @@ static inline int hlist_nulls_unhashed(const struct hlist_nulls_node *h)
 	return !h->pprev;
 }
 
+/**
+ * hlist_nulls_unhashed_lockless - Has node been removed and reinitialized?
+ * @h: Node to be checked
+ *
+ * This variant of hlist_nulls_unhashed() must be used in lockless contexts
+ * to avoid potential load-tearing.
+ */
+static inline int hlist_nulls_unhashed_lockless(const struct hlist_nulls_node *h)
+{
+	return !READ_ONCE(h->pprev);
+}
+
 static inline int hlist_nulls_empty(const struct hlist_nulls_head *h)
 {
 	return is_a_nulls(READ_ONCE(h->first));
