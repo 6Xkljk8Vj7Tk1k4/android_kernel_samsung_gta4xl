@@ -55,24 +55,30 @@ static int ion_hpa_allocate(struct ion_heap *heap,
 				 unsigned long flags)
 {
 	struct ion_hpa_heap *hpa_heap = to_hpa_heap(heap);
-	unsigned int count =
-		(unsigned int)ION_HPA_PAGE_COUNT((unsigned int)len, hpa_heap);
+	unsigned int count;
 	bool zero = !(flags & ION_FLAG_NOZEROED);
 	bool cacheflush = !(flags & ION_FLAG_CACHED) ||
 			  ((flags & ION_FLAG_SYNC_FORCE) != 0);
 	bool protected = hpa_heap->secure && (flags & ION_FLAG_PROTECTED);
-	size_t desc_size = sizeof(struct page *) * count;
+	size_t desc_size;
 	struct page **pages;
 	unsigned long *phys;
 	struct sg_table *sgt;
 	struct scatterlist *sg;
 	int ret, i;
 
-	if (count > HPA_MAX_CHUNK_COUNT) {
+	/*
+	 * Check the full-width length before anything is truncated to 32 bits:
+	 * a len with bit 32 set used to yield a tiny chunk count while the
+	 * dma-buf kept the huge buffer->size.
+	 */
+	if (len > HPA_MAX_CHUNK_COUNT * ION_HPA_CHUNK_SIZE(hpa_heap)) {
 		pr_info("ION HPA heap does not allow buffers > %zu\n",
 			HPA_MAX_CHUNK_COUNT * ION_HPA_CHUNK_SIZE(hpa_heap));
 		return -ENOMEM;
 	}
+	count = ION_HPA_PAGE_COUNT(len, hpa_heap);
+	desc_size = sizeof(struct page *) * count;
 
 	pages = kmalloc(desc_size, GFP_KERNEL);
 	if (!pages)
