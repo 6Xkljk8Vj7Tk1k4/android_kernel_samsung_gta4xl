@@ -65,13 +65,19 @@ static long __ionfd2phys_ioctl(int fd, size_t nr_pfns, sk_pfn_t *pfns)
 		goto put_dma_buf;
 	}
 
+	if (nr_pfns > PAGE_ALIGN(d_buf->size) >> PAGE_SHIFT) {
+		pr_err("ionfd2phys: %zu pfns requested for a %zu byte buffer\n",
+		       nr_pfns, d_buf->size);
+		ret = -EINVAL;
+		goto vunmap;
+	}
+
 	addr = vaddr;
-	/* There is no kernel public API for getting imported buffer
-	*  size. So just use what user has supplied */
 	for (pfn = 0; pfn < nr_pfns; ++pfn) {
 		pfns[pfn] = vmalloc_to_pfn(addr);
 		addr += PAGE_SIZE;
 	}
+vunmap:
 	dma_buf_vunmap(d_buf, vaddr);
 
 put_dma_buf:
