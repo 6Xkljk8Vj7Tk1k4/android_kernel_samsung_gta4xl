@@ -17,8 +17,12 @@
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/uaccess.h>
+#include <linux/cred.h>
 
 #include "ion.h"
+
+/* First application UID (AID_APP_START in Android's android_filesystem_config.h) */
+#define ION_AID_APP_START 10000
 
 /*
  * ION_IOC_FREE and ion_handle_data is deprecated from ION after 4.14.
@@ -100,11 +104,23 @@ long ion_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	case ION_IOC_ALLOC:
 	{
+		unsigned int flags = data.allocation.flags;
 		int fd;
+
+		/*
+		 * ION_FLAG_NOZEROED hands out pages straight from the buddy
+		 * allocator when the pool misses, and the CPU-mmap refusal is
+		 * no protection once the dma-buf is imported into the GPU.
+		 * ION_FLAG_PROTECTED carves memory out for the TEE.  Both are
+		 * for the graphics/media HALs; SELinux lets every app ioctl
+		 * /dev/ion, so drop them for app UIDs.
+		 */
+		if (from_kuid(&init_user_ns, current_fsuid()) >= ION_AID_APP_START)
+			flags &= ~(ION_FLAG_NOZEROED | ION_FLAG_PROTECTED);
 
 		fd = ion_alloc(data.allocation.len,
 			       data.allocation.heap_id_mask,
-			       data.allocation.flags);
+			       flags);
 		if (fd < 0)
 			return fd;
 
