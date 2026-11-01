@@ -419,6 +419,10 @@ static int slsi_extract_mbssids(struct slsi_dev *sdev, struct netdev_vif *ndev_v
 				SLSI_INFO_NODEV("Infinite Loop\n");
 				break;
 			}
+			if (sub_elem + 2 + sub_len > pos + elen) {
+				/* sub-element runs past the MBSSID element */
+				break;
+			}
 			if (sub_elem[0] != 0 || sub_elem[1] < 4) {
 				/* not a valid BSS profile */
 				continue;
