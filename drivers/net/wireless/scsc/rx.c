@@ -2938,7 +2938,7 @@ void slsi_rx_connect_ind(struct slsi_dev *sdev, struct net_device *dev, struct s
 			if (fw_result_code != FAPI_RESULTCODE_ASSOC_FAILED_CODE)
 				fw_result_code = fw_result_code & 0x00FF;
 			SLSI_INFO(sdev, "Connect failed(Assoc Failure), Result code:0x%04x\n", fw_result_code);
-			if (fapi_get_datalen(skb)) {
+			if (fapi_get_datalen(skb) >= sizeof(struct ieee80211_hdr_3addr)) {
 				int mgmt_hdr_len;
 				struct ieee80211_mgmt *mgmt = fapi_get_mgmt(skb);
 
@@ -2951,8 +2951,12 @@ void slsi_rx_connect_ind(struct slsi_dev *sdev, struct net_device *dev, struct s
 					goto exit_with_lock;
 				}
 
-				assoc_rsp_ie = (char *)mgmt + mgmt_hdr_len;
-				assoc_rsp_ie_len = fapi_get_datalen(skb) - mgmt_hdr_len;
+				if (fapi_get_datalen(skb) >= mgmt_hdr_len) {
+					assoc_rsp_ie = (char *)mgmt + mgmt_hdr_len;
+					assoc_rsp_ie_len = fapi_get_datalen(skb) - mgmt_hdr_len;
+				} else {
+					SLSI_NET_WARN(dev, "Short (re)assoc response: %d bytes\n", fapi_get_datalen(skb));
+				}
 			}
 		} else {
 			SLSI_INFO(sdev, "Connect failed,Result code:0x%04x\n", fw_result_code);
