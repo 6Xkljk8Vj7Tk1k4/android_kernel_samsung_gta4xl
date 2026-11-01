@@ -120,8 +120,16 @@ struct ieee80211_channel *slsi_rx_scan_pass_to_cfg80211(struct slsi_dev *sdev, s
 	size_t                   mgmt_len = fapi_get_mgmtlen(skb);
 	s32                      signal = fapi_get_s16(skb, u.mlme_scan_ind.rssi) * 100;
 	u16                      freq = SLSI_FREQ_FW_TO_HOST(fapi_get_u16(skb, u.mlme_scan_ind.channel_frequency));
-	struct ieee80211_channel *channel = slsi_find_scan_channel(sdev, mgmt, mgmt_len, freq);
+	struct ieee80211_channel *channel;
 	struct timespec uptime;
+
+	if (mgmt_len < offsetof(struct ieee80211_mgmt, u.beacon.variable)) {
+		SLSI_NET_WARN(dev, "Scan result too short: %zu bytes\n", mgmt_len);
+		if (release_skb)
+			kfree_skb(skb);
+		return NULL;
+	}
+	channel = slsi_find_scan_channel(sdev, mgmt, mgmt_len, freq);
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 	uptime = ktime_to_timespec(ktime_get_boottime());
@@ -939,13 +947,13 @@ void slsi_rx_rcl_channel_list_ind(struct slsi_dev *sdev, struct net_device *dev,
 
 	sig_data_len = fapi_get_datalen(skb);
 	if (sig_data_len >= 2) {
-		ie_len = ptr[1];
+		ie_len = min_t(int, ptr[1], sig_data_len - 2);
 	} else {
 		SLSI_ERR(sdev, "ERR: Failed to get Fapi data\n");
 		goto exit;
 	}
 
-	while (i < ie_len) {
+	while (i + 1 < ie_len) {
 		le16_ptr = (__le16 *)&ptr[i];
 		channel_val = le16_to_cpu(*le16_ptr);
 		channel_list[channel_count] = ieee80211_frequency_to_channel(channel_val / 2);
@@ -3297,7 +3305,7 @@ void slsi_rx_disconnected_ind(struct slsi_dev *sdev, struct net_device *dev, str
 		SLSI_INFO(sdev, "Received DEAUTH, reason = Local Disconnect <%d>\n", reason);
 	}
 
-	if (fapi_get_datalen(skb)) {
+	if (fapi_get_datalen(skb) >= sizeof(struct ieee80211_hdr_3addr) + 2) {
 		struct ieee80211_mgmt *mgmt = fapi_get_mgmt(skb);
 
 		if (ieee80211_is_deauth(mgmt->frame_control)) {
@@ -3821,7 +3829,7 @@ void slsi_rx_received_frame_ind(struct slsi_dev *sdev, struct net_device *dev, s
 		int mgmt_len;
 
 		mgmt_len = fapi_get_mgmtlen(skb);
-		if (mgmt_len < offsetof(struct ieee80211_mgmt, frame_control) + 2) {
+		if (mgmt_len < sizeof(struct ieee80211_hdr_3addr)) {
 			SLSI_NET_ERR(dev, "invalid fapi mgmt data\n");
 			goto exit;
 		}
@@ -3843,7 +3851,8 @@ void slsi_rx_received_frame_ind(struct slsi_dev *sdev, struct net_device *dev, s
 			goto exit;
 		}
 #endif
-		if (!(ieee80211_is_action(mgmt->frame_control))) {
+		if (!(ieee80211_is_action(mgmt->frame_control)) ||
+		    mgmt_len < IEEE80211_MIN_ACTION_SIZE) {
 			SLSI_NET_ERR(dev, "Expected an Action Frame\n");
 			goto exit;
 		}
