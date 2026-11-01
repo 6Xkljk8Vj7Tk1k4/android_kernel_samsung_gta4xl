@@ -88,6 +88,18 @@ them (or hand-ported where 4.14 differs, noted in each commit message):
   queue lock instead of dropping the length check as 6.6+ does).
 - **USB (CISA KEV, forensic-tool exploit chain)**: CVE-2024-50302 (HID report
   buffer), CVE-2024-53197 (USB audio).
+- **Samsung ION (`/dev/ion`, every app may ioctl it)**: `ION_FLAG_NOZEROED`
+  and `ION_FLAG_PROTECTED` are no longer honoured for app UIDs (unzeroed
+  pool-miss pages were readable through a GPU import; protected memory is
+  for the TEE/media HALs), the HPA heap checks the full 64-bit length before
+  computing its chunk count, and `ionfd2phys` clamps the PFN count to the
+  dma-buf size.
+- **Config**: `SLAB_FREELIST_RANDOM`/`HARDENED`, `BUG_ON_DATA_CORRUPTION`,
+  `SECURITY_DMESG_RESTRICT`, `PANIC_ON_OOPS`; and about 150 options for
+  hardware or protocols this board does not have were dropped (exotic HID
+  quirk drivers, hidraw/hiddev, DVB/IR/ISDB-T/FM, NTFS/cramfs/ecryptfs, Knox
+  NCM, PPP/PPTP/L2TP, sit/ip6tnl/vti/MIPv6, conntrack helpers other than FTP,
+  KSM). The Image is 1.3 MB smaller.
 
 Every Linux kernel entry in the CISA KEV catalogue was checked: each is fixed
 here, not built in this configuration, or was introduced after 4.14. Still
@@ -144,8 +156,8 @@ describe the cgroup2 freezer and `FreezerState` → `cgroup.freeze`.
 
 ## Tested
 
-On a P615 (LTE), last with `c1c07c3574ff` (2026-10-28, OTA update of a
-running system): boots in under a minute; no kernel WARN/BUG in dmesg, no Mali
+On a P615 (LTE), last with the config/ION changes (2026-11-01, kernel-only
+flash via the builder repo's `kernel_flash.sh`): boots in under a minute; no kernel WARN/BUG in dmesg, no Mali
 errors; `cap_last_cap` 40; `use_freezer=true`
 (cached apps frozen); ring buffers pinned under `/sys/fs/bpf`; netd's native
 5.10 stats programs, `BPF_CGROUP_INET_SOCK_RELEASE` and the platform ring
