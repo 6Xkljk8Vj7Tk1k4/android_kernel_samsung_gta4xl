@@ -94,6 +94,14 @@ them (or hand-ported where 4.14 differs, noted in each commit message):
   for the TEE/media HALs), the HPA heap checks the full 64-bit length before
   computing its chunk count, and `ionfd2phys` clamps the PFN count to the
   dma-buf size.
+- **SCSC Wi-Fi driver, host-side RX parsing** (the firmware does MLME and
+  forwards frames; the driver parses them itself): the WMM parameter
+  element of an association response could overrun `wmm_ac[4]` (any AP,
+  before keys), a (re)association response shorter than its fixed fields
+  gave `cfg80211_connect_bss()` a negative IE length, GSCAN results had the
+  same arithmetic, MBSSID sub-elements and RSN/WPA AKM suite lists were
+  walked past their elements, and several handlers read 802.11 fixed
+  fields without a minimum length. All bounded now.
 - **Config**: `SLAB_FREELIST_RANDOM`/`HARDENED`, `BUG_ON_DATA_CORRUPTION`,
   `SECURITY_DMESG_RESTRICT`, `PANIC_ON_OOPS`; and about 150 options for
   hardware or protocols this board does not have were dropped (exotic HID
