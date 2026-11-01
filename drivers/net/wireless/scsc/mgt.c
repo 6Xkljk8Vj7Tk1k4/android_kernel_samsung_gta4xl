@@ -5294,12 +5294,12 @@ u8 slsi_bss_connect_type_get(struct slsi_dev *sdev, const u8 *ie, size_t ie_len)
 		if (ie_len < 9)
 			return akm_type;
 		pos = 7 + 2 + (rsn[8] * 4);
+		if (ie_len < (pos + 2))
+			return akm_type;
 		akm_count = rsn[pos + 1];
 		pos += 2;
-		if (ie_len < (pos + 1))
-			return akm_type;
 		for (i = 0; i < akm_count; i++) {
-			if (ie_len < (pos + 1))
+			if (ie_len < (pos + 5))
 				return akm_type;
 			if (rsn[pos + 1] == 0x00 && rsn[pos + 2] == 0x0f && rsn[pos + 3] == 0xac) {
 				if (rsn[pos + 4] == 0x08 || rsn[pos + 4] == 0x09)
@@ -5326,12 +5326,12 @@ u8 slsi_bss_connect_type_get(struct slsi_dev *sdev, const u8 *ie, size_t ie_len)
 		if (ie_len < 13)
 			return akm_type;
 		pos = 13 + (wpa_ie[12] * 4);
+		if (ie_len < (pos + 2))
+			return akm_type;
 		akm_count = wpa_ie[pos + 1];
 		pos += 2;
-		if (ie_len < (pos + 1))
-			return akm_type;
 		for (i = 0; i < akm_count; i++) {
-			if (ie_len < (pos + 1))
+			if (ie_len < (pos + 5))
 				return akm_type;
 			if (wpa_ie[pos + 1] == 0x00 && wpa_ie[pos + 2] == 0x50 && wpa_ie[pos + 3] == 0xf2) {
 				if (wpa_ie[pos + 4] == 0x02)
