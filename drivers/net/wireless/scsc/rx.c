@@ -1925,7 +1925,11 @@ static bool sta_wmm_update_wmm_ac_ies(struct slsi_dev *sdev, struct net_device *
 	pos = wmm_elem + 10;
 	left = wmm_elem_len - 10;
 
-	for (; left >= 4; left -= 4, pos += 4) {
+	/* The IE comes from the AP's association response; only four access
+	 * categories exist and wmm_ac[] has room for exactly those.
+	 */
+	for (; left >= 4 && wmm_ac < &ndev_vif->sta.wmm_ac[ARRAY_SIZE(ndev_vif->sta.wmm_ac)];
+	     left -= 4, pos += 4) {
 		int aci = (pos[0] >> 5) & 0x03;
 		int acm = (pos[0] >> 4) & 0x01;
 
