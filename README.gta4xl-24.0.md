@@ -109,7 +109,7 @@ them (or hand-ported where 4.14 differs, noted in each commit message):
   walked past their elements, and several handlers read 802.11 fixed
   fields without a minimum length. All bounded now.
 - **Config**: `SLAB_FREELIST_RANDOM`/`HARDENED`, `BUG_ON_DATA_CORRUPTION`,
-  `SECURITY_DMESG_RESTRICT`, `PANIC_ON_OOPS`; and about 150 options for
+  `SECURITY_DMESG_RESTRICT`, `PANIC_ON_OOPS`, `SYN_COOKIES` (was off: no `tcp_syncookies` sysctl at all); and about 150 options for
   hardware or protocols this board does not have were dropped (exotic HID
   quirk drivers, hidraw/hiddev, DVB/IR/ISDB-T/FM, NTFS/cramfs/ecryptfs, Knox
   NCM, PPP/PPTP/L2TP, sit/ip6tnl/vti/MIPv6, conntrack helpers other than FTP,
