@@ -4,8 +4,9 @@ Linux 4.14.357 for the Samsung Galaxy Tab S6 Lite (`gta4xl` LTE, `gta4xlwifi`,
 Exynos 9611) with the eBPF backports Android 17 expects at the "kernel 5.10"
 level, the cgroup v2 freezer and security fixes that nobody else ships for
 this 4.14 kernel any more. It is the kernel used by an unofficial LineageOS
-24.0 build of this device; the ROM side lives in a separate builder
-repository.
+24.0 build of this device; the ROM side (build environment, port patches
+and a proof-of-concept build) lives in
+[lineageos-24.0-gta4xl-builder](https://github.com/6Xkljk8Vj7Tk1k4/lineageos-24.0-gta4xl-builder).
 
 `gta4xl-24.0` is the only maintained branch. The former `gta4xl-24.0-bpf510`
 (eBPF port only) and `gta4xl-24.0-mali-cves` (port + security fixes) were
