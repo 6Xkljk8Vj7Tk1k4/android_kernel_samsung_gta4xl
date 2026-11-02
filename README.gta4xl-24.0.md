@@ -11,6 +11,33 @@ repository.
 (eBPF port only) and `gta4xl-24.0-mali-cves` (port + security fixes) were
 folded into it; their history is fully contained here.
 
+## Security at a glance
+
+Samsung's last firmware for the Exynos 9611 carries the 2024-05 security patch
+level, and the 4.14 stable series ended in March 2026. This branch keeps
+going, and every change is boot-tested on the tablet before it lands:
+
+- **28 CVEs fixed** by backports or hand-ports, five of them on CISA's list of
+  vulnerabilities exploited in the wild: CVE-2024-4610 and CVE-2023-26083
+  (Mali GPU driver), CVE-2025-38352 (posix CPU timers, used against Android)
+  and the forensic-tool USB chain CVE-2024-50302 / CVE-2024-53197.
+- **Remote network bugs** in IPv4, IPv6, TCP and cfg80211 that a host on the
+  same network can trigger, including CVE-2026-98432 (rated Critical by Red
+  Hat).
+- **9 bugs without a CVE**, found by auditing the vendor code that an app or a
+  Wi-Fi access point can reach: three in Samsung's ION allocator and six in the
+  SCSC Wi-Fi driver, among them an out-of-bounds write that an access point
+  could trigger with its association response, before any keys are exchanged.
+- **Hardened configuration**: SLAB freelist randomisation and hardening,
+  `BUG_ON_DATA_CORRUPTION`, `PANIC_ON_OOPS`, restricted `dmesg`, SYN cookies,
+  and about 150 options for hardware and protocols this tablet does not have
+  removed.
+- **Monthly review** of every new kernel CVE against the files this
+  configuration actually compiles; 481 have been assessed so far.
+
+Details for each fix are in [Security fixes](#security-fixes) below and in the
+commit messages.
+
 ## Why
 
 LineageOS 24.0 (Android 17) requires eBPF features of kernel 5.10 — ring
