@@ -79,7 +79,10 @@ them (or hand-ported where 4.14 differs, noted in each commit message):
   CVE-2026-98255 (old ACKs in the TCP fast path), CVE-2024-56644 (expired PMTU
   exception dst leak), CVE-2025-68241 (stale fnhe rebinding), CVE-2026-97472
   (temporary addresses after prefix deprecation), CVE-2026-99121
-  (`fib_rebalance` divide by zero).
+  (`fib_rebalance` divide by zero), CVE-2026-98432 (IPv4 options of a
+  request socket freed while a retransmitted SYN still builds a SYN-ACK from
+  them; remote, needs a listening TCP socket; hand-ported with NULL checks
+  because `kfree_rcu()` in 4.14 does not accept NULL).
 - **Browser-sandbox reachable**: binder UAFs CVE-2026-64469 and
   CVE-2026-64468, CVE-2025-38352 (CISA KEV, exploited on Android; posix CPU
   timer vs. reaped task), CVE-2026-64370, CVE-2026-98507 (anon_vma publish
