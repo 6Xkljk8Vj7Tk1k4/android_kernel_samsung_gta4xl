@@ -78,16 +78,22 @@ them (or hand-ported where 4.14 differs, noted in each commit message):
   CVE-2026-53006 (`icmpv6_rcv`), CVE-2026-74398 (DAD failure race),
   CVE-2026-98255 (old ACKs in the TCP fast path), CVE-2024-56644 (expired PMTU
   exception dst leak), CVE-2025-68241 (stale fnhe rebinding), CVE-2026-97472
-  (temporary addresses after prefix deprecation).
+  (temporary addresses after prefix deprecation), CVE-2026-99121
+  (`fib_rebalance` divide by zero).
 - **Browser-sandbox reachable**: binder UAFs CVE-2026-64469 and
   CVE-2026-64468, CVE-2025-38352 (CISA KEV, exploited on Android; posix CPU
   timer vs. reaped task), CVE-2026-64370, CVE-2026-98507 (anon_vma publish
-  barrier), CVE-2025-40040 (KSM), CVE-2026-64109 (AF_UNIX `tail->len` UAF;
+  barrier), CVE-2025-40040 (KSM), CVE-2026-99203 (pipe fasync reader UAF on a failed
+  writer registration, reachable by any app), CVE-2026-64109 (AF_UNIX `tail->len` UAF;
   own fix, because 4.14 still appends to the tail skb in
   `unix_stream_sendpage()`, so tail and length are read under the receive
   queue lock instead of dropping the length check as 6.6+ does).
 - **USB (CISA KEV, forensic-tool exploit chain)**: CVE-2024-50302 (HID report
   buffer), CVE-2024-53197 (USB audio).
+- **Netlink**: CVE-2026-99201 (the socket hash table was keyed by the
+  `struct net` pointer, which `/proc/net/netlink` and sock_diag bucket order
+  leaked; keyed by `net_cookie` now), CVE-2026-99211 (socket filters could
+  read uninitialised headroom before the message; hand-ported).
 - **Samsung ION (`/dev/ion`, every app may ioctl it)**: `ION_FLAG_NOZEROED`
   and `ION_FLAG_PROTECTED` are no longer honoured for app UIDs (unzeroed
   pool-miss pages were readable through a GPU import; protected memory is
