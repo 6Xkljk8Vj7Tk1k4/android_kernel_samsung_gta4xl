@@ -33,7 +33,7 @@ going, and every change is boot-tested on the tablet before it lands:
   and about 150 options for hardware and protocols this tablet does not have
   removed.
 - **Monthly review** of every new kernel CVE against the files this
-  configuration actually compiles; 481 have been assessed so far.
+  configuration actually compiles; 480 have been assessed so far.
 
 Details for each fix are in [Security fixes](#security-fixes) below and in the
 commit messages.
