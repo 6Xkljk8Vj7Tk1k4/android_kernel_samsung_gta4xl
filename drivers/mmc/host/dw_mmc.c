@@ -4780,8 +4780,11 @@ int dw_mci_probe(struct dw_mci *host, struct platform_device *pdev)
 	}
 
 	host->ciu_gate = devm_clk_get(host->dev, "ciu_gate");
-	if (IS_ERR(host->ciu_gate))
+	if (IS_ERR(host->ciu_gate)) {
 		dev_dbg(host->dev, "not used ciu gate clock or not available\n");
+		/* dw_mci_ciu_clk_en/dis() test for NULL; an error pointer crashed in clk_prepare() */
+		host->ciu_gate = NULL;
+	}
 
 	host->ciu_clk = devm_clk_get(host->dev, "ciu");
 	if (IS_ERR(host->ciu_clk)) {
