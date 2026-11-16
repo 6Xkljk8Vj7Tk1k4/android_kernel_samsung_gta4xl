@@ -433,10 +433,9 @@ static int dw_mci_ciu_clk_en(struct dw_mci *host)
 {
 	int ret = 0;
 
-	if (!host->ciu_gate) {
-		dev_err(host->dev, "no available CIU gating clock\n");
-		return 1;
-	}
+	/* no separate gating clock in the DT (9610: only "ciu" and "biu"): nothing to switch */
+	if (!host->ciu_gate)
+		return 0;
 
 	if (!atomic_cmpxchg(&host->ciu_clk_cnt, 0, 1)) {
 		ret = clk_prepare_enable(host->ciu_gate);

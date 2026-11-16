@@ -675,6 +675,10 @@ static int dw_mci_exynos_parse_dt(struct dw_mci *host)
 			priv->clk_drive_base = pinctrl_lookup_state(priv->pinctrl, "default");
 		else
 			priv->clk_drive_base = pinctrl_lookup_state(priv->pinctrl, "init");
+		/* the 9610 DT has no "init" state: an error pointer here went into
+		 * pinctrl_select_state() in dw_mci_exynos_priv_init() */
+		if (IS_ERR(priv->clk_drive_base))
+			priv->clk_drive_base = NULL;
 		priv->clk_drive_str[0] = pinctrl_lookup_state(priv->pinctrl, "fast-slew-rate-1x");
 		priv->clk_drive_str[1] = pinctrl_lookup_state(priv->pinctrl, "fast-slew-rate-2x");
 		priv->clk_drive_str[2] = pinctrl_lookup_state(priv->pinctrl, "fast-slew-rate-3x");
