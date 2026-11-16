@@ -105,7 +105,9 @@ static int exynos_constraint_parse(struct exynos_devfreq_data *data,
 #ifdef CONFIG_EXYNOS_DVFS_MANAGER
 	struct exynos_dm_freq *const_table;
 #endif
-	np = of_find_node_by_name(data->dev->of_node, "skew");
+	/* a child lookup as in 4.14: of_find_node_by_name() searches the whole tree after this node,
+	 * so on the 9610 devfreq_mif picked up the skew table of devfreq_int */
+	np = of_get_child_by_name(data->dev->of_node, "skew");
 	if (!np)
 		return 0;
 	num_child = of_get_child_count(np);
