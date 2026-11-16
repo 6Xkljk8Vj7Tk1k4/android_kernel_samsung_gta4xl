@@ -29,7 +29,7 @@
 int mfill_atomic_install_pte(struct mm_struct *dst_mm, pmd_t *dst_pmd,
 			     struct vm_area_struct *dst_vma,
 			     unsigned long dst_addr, struct page *page,
-			     bool newly_allocated)
+			     bool newly_allocated, struct mem_cgroup *memcg)
 {
 	int ret;
 	pte_t _dst_pte, *dst_pte;
@@ -74,6 +74,17 @@ int mfill_atomic_install_pte(struct mm_struct *dst_mm, pmd_t *dst_pmd,
 	 * PageAnon()), which is set by __page_set_anon_rmap().
 	 */
 	inc_mm_counter(dst_mm, mm_counter(page));
+
+	/*
+	 * A charge the caller still holds uncommitted is committed here, as
+	 * 4.19's mcopy_atomic_pte() did: under the page table lock, before
+	 * the page can reach an LRU list (the per-cpu pagevec may be drained
+	 * by this very add, which would put the page on the root cgroup's
+	 * list and leave the owner's LRU size one short) and before the PTE
+	 * makes the page visible to a concurrent zap.
+	 */
+	if (memcg)
+		mem_cgroup_commit_charge(page, memcg, false, false);
 
 	if (newly_allocated)
 		lru_cache_add_active_or_unevictable(page, dst_vma);
@@ -138,12 +149,11 @@ static int mcopy_atomic_pte(struct mm_struct *dst_mm,
 		goto out_release;
 
 	ret = mfill_atomic_install_pte(dst_mm, dst_pmd, dst_vma, dst_addr,
-				       page, true);
+				       page, true, memcg);
 	if (ret) {
 		mem_cgroup_cancel_charge(page, memcg, false);
 		goto out_release;
 	}
-	mem_cgroup_commit_charge(page, memcg, false, false);
 out:
 	return ret;
 out_release:
@@ -206,7 +216,7 @@ static int mcontinue_atomic_pte(struct mm_struct *dst_mm,
 	}
 
 	ret = mfill_atomic_install_pte(dst_mm, dst_pmd, dst_vma, dst_addr,
-				       page, false);
+				       page, false, NULL);
 	if (ret)
 		goto out_release;
 

@@ -2419,10 +2419,11 @@ int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 	if (ret)
 		goto out_release_uncharge;
 
+	/* before the rmap in mfill_atomic_install_pte(): NR_FILE_MAPPED is per memcg */
 	mem_cgroup_commit_charge(page, memcg, false, false);
 
 	ret = mfill_atomic_install_pte(dst_mm, dst_pmd, dst_vma, dst_addr,
-				       page, true);
+				       page, true, NULL);
 	if (ret)
 		goto out_delete_from_cache;
 
@@ -2437,6 +2438,8 @@ int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 	return 0;
 out_delete_from_cache:
 	delete_from_page_cache(page);
+	/* the charge is committed: the last put_page() uncharges it */
+	goto out_release;
 out_release_uncharge:
 	mem_cgroup_cancel_charge(page, memcg, false);
 out_release:
