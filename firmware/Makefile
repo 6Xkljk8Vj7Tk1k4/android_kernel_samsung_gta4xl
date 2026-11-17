@@ -10,13 +10,30 @@ CONFIG_EXTRA_FIRMWARE_DIR="firmware"
 fwdir := $(subst $(quote),,$(CONFIG_EXTRA_FIRMWARE_DIR))
 fwabs := $(addprefix $(srctree)/,$(filter-out /%,$(fwdir)))$(filter /%,$(fwdir))
 
+# ACPM plug-ins of the 9610 (from the 4.14 tree). The driver attaches them even when the load
+# fails, and after a cold reset the plug-in area is empty: the ACPM firmware then faults.
+fw-external-$(CONFIG_EXYNOS9610_ACPM) += exynos9610_acpm_fvp.fw
+fw-external-$(CONFIG_EXYNOS9610_ACPM) += exynos9610_acpm_tmu.fw
+
+ifdef CONFIG_SOC_EXYNOS9610
+# sensor hub of the 9610 (driver and firmware of the 4.14 tree)
+fw-external-$(CONFIG_SENSORS_SSP) += sensorhub/shub_bl.fw
+fw-external-$(CONFIG_SENSORS_SSP_GTA4XL) += sensorhub/shub_exynos9611_gta4xl.fw
+else
 fw-external-$(CONFIG_SENSORS_SSP) += sensorhub/shub_nacho_bl.bin
 fw-external-$(CONFIG_SENSORS_SSP_A21S) += sensorhub/shub_nacho_a21s.bin
 fw-external-$(CONFIG_SENSORS_SSP_A21S) += sensorhub/a21s_bring_up.bin
+endif
 
 fw-external-$(CONFIG_TOUCHSCREEN_SYNAPTICS_TCM) += tsp_synaptics/td4150_a21s.bin
 
+ifdef CONFIG_SOC_EXYNOS9610
+fw-external-$(CONFIG_TOUCHSCREEN_HIMAX_CHIPSET) += tsp_himax/hx83102e_gta4xl.fw tsp_himax/hx83102e_gta4xl_old.fw
+else
 fw-external-$(CONFIG_TOUCHSCREEN_HIMAX_CHIPSET) += tsp_himax/hx83112a_a21s.bin
+endif
+fw-external-$(CONFIG_EPEN_WACOM_W9019) += epen/wacom9019_gta4xl.fw
+fw-external-$(CONFIG_SENSORS_A96T3X6_TABA4XL) += abov/a96t356_taba4xl.fw abov/a96t356_taba4xl_wifi.fw
 fw-external-$(CONFIG_TOUCHSCREEN_NT36xxx_HOSTDL_SPI) += tsp_novatek/nt36675_a21s_csot.bin tsp_novatek/nt36675_a21s_mp_csot.bin
 
 quiet_cmd_ihex  = IHEX    $@
