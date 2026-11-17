@@ -5,7 +5,10 @@ Samsung never released a kernel newer than 4.14 for this SoC, and the 4.14
 stable series ended in March 2026. This branch adds the tablet to Samsung's
 4.19 tree for the Exynos 850, as LineageOS maintains it for Android 17
 ([android_kernel_samsung_exynos850](https://github.com/LineageOS/android_kernel_samsung_exynos850),
-`lineage-24.0`, at `b8c71b7aecec`).
+`lineage-24.0`, at `b8c71b7aecec`), and merges the 4.19 stable backports that
+the Civil Infrastructure Platform has kept publishing since kernel.org ended
+the series (`linux-4.19.y-st`, release `st21`: `uname -r` says
+`4.19.325-st21-g<commit>`).
 
 It is the kernel of an unofficial LineageOS 24.0 build for this tablet; the ROM
 side (build environment, port patches) lives in
@@ -69,6 +72,9 @@ Known gaps:
    `kthread_unpark()`.
 3. **Security fixes**: 74 commits, upstream fixes with their original authors
    and the fixes of the 4.14 branch for vendor code.
+4. **CIP's `linux-4.19.y-st`**, merged: the 5036 backports made on top of
+   4.19.325 between February 2025 and November 2026. The merge commit lists
+   what was adapted and what was left out, and why.
 
 ### Where the code comes from
 
@@ -135,12 +141,16 @@ by the kernel.
 ## Security
 
 Samsung's kernel source for this SoC has had next to no security fixes since
-mid-2024, and neither 4.14 nor 4.19 has an upstream stable series any more.
-Fixes are picked one by one, from the oldest stable branch that has them or
-ported by hand (noted in the commit message):
+mid-2024. kernel.org ended 4.19 with 4.19.325 in December 2024; the Civil
+Infrastructure Platform (CIP) continues it, and this branch merges CIP's
+stable-style branch. That covers the generic kernel as far as CIP backports
+it. It does not cover the vendor drivers, Android's additions, or fixes that
+no 4.19 branch ever received. Those are picked one by one, from the oldest
+stable branch that has them or ported by hand (noted in the commit message):
 
-- **64 CVEs fixed**: everything the 4.14 branch had, among them CVE-2024-4610
-  and CVE-2023-26083 (Mali, both exploited in the wild), CVE-2025-38352 (posix
+- **64 CVEs fixed by commits of this branch**: everything the 4.14 branch
+  had, among them CVE-2024-4610 and CVE-2023-26083 (Mali, both exploited in
+  the wild), CVE-2025-38352 (posix
   CPU timers, used against Android) and the remote ones in IPv4, IPv6, TCP and
   cfg80211 such as CVE-2026-98432, plus those found by checking this tree.
   The donor tree lacked the Mali, ION and Wi-Fi driver fixes although it has
@@ -160,7 +170,26 @@ ported by hand (noted in the commit message):
 
 Every new kernel CVE is checked against the files this configuration actually
 compiles (kernel CNA `vulns.git`, headers through kbuild's `.o.cmd` lists);
-the tooling is in the builder repository.
+the tooling is in the builder repository. State of 2026-11-17 for the network
+and browser-sandbox surfaces: 630 CVEs touch compiled files, 389 are fixed
+(164 of them by the CIP merge), 241 are open, each with a recorded verdict:
+74 need root or a capability, 57 cannot be reached in this configuration or
+with Android's defaults, 62 concern code that is not built or not present, 40
+are of low impact, 7 were judged not worth a risky port. One is reachable by
+an app: CVE-2022-50445, a soft lockup through inbound ESP on the app's own
+IPsec association; its fix is a rework of the receive path.
+
+Not taken from CIP, and therefore still open here:
+
+- **f2fs**: this tree's f2fs is much newer than 4.19's, and CIP's 22 f2fs
+  fixes are written for the old code. `/data` is on f2fs, so each of them has
+  to be taken from mainline and reviewed on its own. The merge commit lists
+  them.
+- **USB gadget**: the race between `gether_disconnect()` and `eth_stop()`
+  (upstream `e1eabb072c75`). The vendor's version of that code dereferences
+  the pointer the fix clears early; it needs its own port. The halt timeout
+  fix for `dwc3_gadget_run_stop()` is not applied either: the vendor function
+  handles that case differently.
 
 ## Building
 
@@ -219,7 +248,23 @@ with, and stays on:
 
 ## Updating
 
-New fixes go on top as single commits with the upstream reference
+Once a month:
+
+```sh
+git remote add cip https://git.kernel.org/pub/scm/linux/kernel/git/cip/linux-cip.git
+git fetch --no-tags cip linux-4.19.y-st
+git merge cip/linux-4.19.y-st
+```
+
+Then the CVE check of the builder repository for what the merge did not bring.
+Two things a merge of that branch needs every time: `fs/f2fs` stays as it is
+here, and a change that merges without a conflict is not yet a change that
+is right. CIP's fixes are written for plain 4.19, and where Samsung or
+Android rewrote a function they can apply cleanly and still be wrong (the
+first merge had one that would have crashed on USB tethering). Read every
+hunk that lands in a function this tree has changed.
+
+Other fixes go on top as single commits with the upstream reference
 (`commit X upstream` or `cherry picked from commit X`). To follow the donor,
 merge `LineageOS/android_kernel_samsung_exynos850` `lineage-24.0`.
 
@@ -227,4 +272,5 @@ merge `LineageOS/android_kernel_samsung_exynos850` `lineage-24.0`.
 
 Samsung's open source releases for the SM-P615 and the Exynos 850 devices,
 the LineageOS maintainers of `android_kernel_samsung_gta4xl` and
-`android_kernel_samsung_exynos850`, and the kernel CNA for `vulns.git`.
+`android_kernel_samsung_exynos850`, the Civil Infrastructure Platform for
+keeping 4.19 alive, and the kernel CNA for `vulns.git`.
