@@ -330,11 +330,36 @@ unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 	return min(max, util);
 }
 
+#ifdef CONFIG_SCHED_TUNE
+extern long schedtune_margin(unsigned long capacity, unsigned long signal, long boost);
+
+/*
+ * The boost of the schedtune groups runnable on this CPU, as a share of the
+ * headroom. EMS applies it for its own governor only; user space (the power
+ * HAL raises schedtune.boost of top-app while the screen is touched) expects
+ * it from whichever governor runs, as it got it from the 4.14 one.
+ */
+static unsigned long sugov_schedtune_boosted(int cpu, unsigned long util, unsigned long max)
+{
+	int boost = schedtune_cpu_boost(cpu);
+
+	if (boost <= 0 || util >= max)
+		return util;
+
+	return min(max, util + (unsigned long)schedtune_margin(max, util, boost));
+}
+#else
+static inline unsigned long sugov_schedtune_boosted(int cpu, unsigned long util, unsigned long max)
+{
+	return util;
+}
+#endif
+
 static unsigned long sugov_get_util(struct sugov_cpu *sg_cpu)
 {
 	struct rq *rq = cpu_rq(sg_cpu->cpu);
-	unsigned long util_cfs = cpu_util_cfs(rq);
 	unsigned long max = arch_scale_cpu_capacity(NULL, sg_cpu->cpu);
+	unsigned long util_cfs = sugov_schedtune_boosted(sg_cpu->cpu, cpu_util_cfs(rq), max);
 
 	sg_cpu->max = max;
 	sg_cpu->bw_dl = cpu_bw_dl(rq);
