@@ -20,7 +20,12 @@
 
 #include "./debug/sec_debug_internal.h"
 #ifdef CONFIG_BATTERY_SAMSUNG
+/* the property numbers must be those of the battery driver that is built */
+#ifdef CONFIG_BATTERY_SAMSUNG_V2
+#include "../battery_v2/include/sec_battery.h"
+#else
 #include "../battery/common/sec_battery.h"
+#endif
 #endif
 #include <linux/sec_batt.h>
 
@@ -101,8 +106,16 @@ enum sec_power_flags {
 
 #define SEC_DUMPSINK_MASK 0x0000FFFF
 
-/* PANIC INFORM */
+/*
+ * PANIC INFORM. The bootloader compares the whole word: the Exynos 9610/9611 one knows
+ * 0x1234567x (anything else is a power-on to it: "reboot recovery" started Android again),
+ * the Exynos 850 one 0x123456xx.
+ */
+#ifdef CONFIG_SOC_EXYNOS9610
+#define SEC_RESET_REASON_PREFIX         0x12345670
+#else
 #define SEC_RESET_REASON_PREFIX         0x12345600
+#endif
 #define SEC_RESET_SET_PREFIX            0xabc00000
 #define SEC_RESET_MULTICMD_PREFIX       0xa5600000
 enum sec_reset_reason {
@@ -336,12 +349,22 @@ static void sec_reboot(enum reboot_mode reboot_mode, const char *cmd)
 
 	if (cmd) {
 		unsigned long value;
+#ifdef CONFIG_SOC_EXYNOS9610
+		/* as this board's 4.14 kernel: "recovery-update" starts the recovery too */
+		if (!strcmp(cmd, "fota"))
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_FOTA);
+		else if (!strcmp(cmd, "fota_bl"))
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_FOTA_BL);
+		else if (!strncmp(cmd, "recovery", 8))
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_RECOVERY);
+#else
 		if (!strcmp(cmd, "recovery-update"))
 			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_FOTA);
 		else if (!strcmp(cmd, "fota_bl"))
 			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_FOTA_BL);
 		else if (!strcmp(cmd, "recovery"))
 			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_RECOVERY);
+#endif
 		else if (!strcmp(cmd, "download"))
 			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_DOWNLOAD);
 		else if (!strcmp(cmd, "bootloader"))
