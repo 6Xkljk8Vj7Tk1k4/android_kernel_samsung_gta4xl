@@ -1067,6 +1067,26 @@ config UNMAP_KERNEL_AT_EL0
 
 	  If unsure, say Y.
 
+config ARM64_ASID_IN_TTBR0
+	bool "Keep the ASID in TTBR0_EL1" if EXPERT
+	depends on !UNMAP_KERNEL_AT_EL0
+	help
+	  Since the kernel page table isolation work the ASID lives in
+	  TTBR1_EL1 (TCR_EL1.A1 set), because the isolation trampoline flips
+	  one of its bits. Without the trampoline that only means that every
+	  change of address space writes two translation registers instead
+	  of one: TTBR0_EL1 for the table and TTBR1_EL1 for the ASID. The
+	  software PAN emulation does it on each kernel entry and again on
+	  each exit.
+
+	  Under a hypervisor that traps writes to these registers (HCR_EL2.TVM;
+	  the Exynos 9610 boards: about 140 ns per write) this is the largest
+	  single item of a system call. With this option TCR_EL1.A1 stays
+	  clear and one write of TTBR0_EL1 carries both the table and the
+	  ASID, as it did before 4.16.
+
+	  If unsure, say N.
+
 config HARDEN_BRANCH_PREDICTOR
 	bool "Harden the branch predictor against aliasing attacks" if EXPERT
 	default y

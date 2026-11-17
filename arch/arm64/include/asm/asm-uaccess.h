@@ -12,6 +12,27 @@
  * User access enabling/disabling macros.
  */
 #ifdef CONFIG_ARM64_SW_TTBR0_PAN
+#ifdef CONFIG_ARM64_ASID_IN_TTBR0
+	/*
+	 * TCR_EL1.A1 is clear: the ASID is the one in TTBR0_EL1. The reserved
+	 * table address has a zero ASID field, the saved TTBR0_EL1 of a task
+	 * carries its ASID (update_saved_ttbr0()), so one write switches both.
+	 */
+	.macro	__uaccess_ttbr0_disable, tmp1
+	mrs	\tmp1, ttbr1_el1			// swapper_pg_dir
+	bic	\tmp1, \tmp1, #TTBR_ASID_MASK
+	sub	\tmp1, \tmp1, #RESERVED_TTBR0_SIZE	// reserved_ttbr0 just before swapper_pg_dir
+	msr	ttbr0_el1, \tmp1			// set reserved TTBR0_EL1 and ASID
+	isb
+	.endm
+
+	.macro	__uaccess_ttbr0_enable, tmp1, tmp2
+	get_thread_info \tmp1
+	ldr	\tmp1, [\tmp1, #TSK_TI_TTBR0]	// load saved TTBR0_EL1
+	msr	ttbr0_el1, \tmp1		// set the non-PAN TTBR0_EL1 and ASID
+	isb
+	.endm
+#else
 	.macro	__uaccess_ttbr0_disable, tmp1
 	mrs	\tmp1, ttbr1_el1			// swapper_pg_dir
 	bic	\tmp1, \tmp1, #TTBR_ASID_MASK
@@ -34,6 +55,7 @@
 	msr	ttbr0_el1, \tmp1		// set the non-PAN TTBR0_EL1
 	isb
 	.endm
+#endif
 
 	.macro	uaccess_ttbr0_disable, tmp1, tmp2
 alternative_if_not ARM64_HAS_PAN

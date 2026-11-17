@@ -36,6 +36,13 @@
 #define TCR_TG_FLAGS	TCR_TG0_4K | TCR_TG1_4K
 #endif
 
+/* Where the ASID comes from: TTBR1_EL1 (A1 set) or TTBR0_EL1 */
+#ifdef CONFIG_ARM64_ASID_IN_TTBR0
+#define TCR_ASID_SELECT	0
+#else
+#define TCR_ASID_SELECT	TCR_A1
+#endif
+
 #ifdef CONFIG_RANDOMIZE_BASE
 #define TCR_KASLR_FLAGS	TCR_NFD1
 #else
@@ -210,6 +217,14 @@ ENDPROC(cpu_do_resume)
  *	- pgd_phys - physical address of new TTB
  */
 ENTRY(cpu_do_switch_mm)
+#ifdef CONFIG_ARM64_ASID_IN_TTBR0
+	mmid	x1, x1				// get mm->context.id
+	phys_to_ttbr x3, x0
+	bfi	x3, x1, #48, #16		// the ASID travels with the table
+	msr	ttbr0_el1, x3			// (TCR.A1 is clear): one write
+	isb
+	b	post_ttbr_update_workaround	// Back to C code...
+#else
 	mrs	x2, ttbr1_el1
 	mmid	x1, x1				// get mm->context.id
 	phys_to_ttbr x3, x0
@@ -222,6 +237,7 @@ ENTRY(cpu_do_switch_mm)
 	msr	ttbr0_el1, x3			// now update TTBR0
 	isb
 	b	post_ttbr_update_workaround	// Back to C code...
+#endif
 ENDPROC(cpu_do_switch_mm)
 
 	.pushsection ".idmap.text", "awx"
@@ -503,7 +519,7 @@ ENTRY(__cpu_setup)
 	 */
 	ldr	x10, =TCR_TxSZ(VA_BITS) | TCR_CACHE_FLAGS | TCR_SMP_FLAGS | \
 			TCR_TG_FLAGS | TCR_KASLR_FLAGS | TCR_ASID16 | \
-			TCR_TBI0 | TCR_A1 | TCR_KASAN_FLAGS
+			TCR_TBI0 | TCR_ASID_SELECT | TCR_KASAN_FLAGS
 	tcr_set_idmap_t0sz	x10, x9
 
 	/*
