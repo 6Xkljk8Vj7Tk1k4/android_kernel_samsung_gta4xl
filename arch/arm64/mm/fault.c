@@ -1022,3 +1022,22 @@ void cpu_enable_pan(const struct arm64_cpu_capabilities *__unused)
 	asm(SET_PSTATE_PAN(1));
 }
 #endif /* CONFIG_ARM64_PAN */
+
+/*
+ * Fault-around maps the pages next to the faulting one "old" (want_old_faultaround_pte),
+ * so that only those really used count as referenced. A CPU that sets the access flag
+ * itself does this for free. Without the hardware update (ARMv8.0: Cortex-A53, A73) each
+ * of these pages takes an access flag fault on its first use, which is most of what
+ * fault-around was to save: 69000 faults instead of 5000 for 65536 cached file pages on
+ * the Exynos 9611, 1140 ns per page instead of 250. Upstream decides the same way since
+ * 5.12 (arch_wants_old_prefaulted_pte()). The sysctl still overrides.
+ */
+static int __init arm64_faultaround_pte_init(void)
+{
+	u64 mmfr1 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR1_EL1);
+
+	if (!cpuid_feature_extract_unsigned_field(mmfr1, ID_AA64MMFR1_HADBS_SHIFT))
+		want_old_faultaround_pte = 0;
+	return 0;
+}
+core_initcall(arm64_faultaround_pte_init);
