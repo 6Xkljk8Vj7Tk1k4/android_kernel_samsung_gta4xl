@@ -1,5 +1,12 @@
 # gta4xl kernel for LineageOS 24.0 (branch `gta4xl-24.0`)
 
+> **Archived, no longer maintained.** No further fixes land on this 4.14
+> branch. The tablet's kernel is now Linux 4.19 on branch
+> [`gta4xl-4.19`](https://github.com/6Xkljk8Vj7Tk1k4/android_kernel_samsung_gta4xl/tree/gta4xl-4.19),
+> which carries every security fix of this branch and is the one to use and
+> to report against. The text below describes this branch as it was left in
+> November 2026.
+
 Linux 4.14.357 for the Samsung Galaxy Tab S6 Lite (`gta4xl` LTE, `gta4xlwifi`,
 Exynos 9611) with the eBPF backports Android 17 expects at the "kernel 5.10"
 level, the cgroup v2 freezer and security fixes that nobody else ships for
@@ -8,9 +15,9 @@ this 4.14 kernel any more. It is the kernel used by an unofficial LineageOS
 and a proof-of-concept build) lives in
 [lineageos-24.0-gta4xl-builder](https://github.com/6Xkljk8Vj7Tk1k4/lineageos-24.0-gta4xl-builder).
 
-`gta4xl-24.0` is the only maintained branch. The former `gta4xl-24.0-bpf510`
-(eBPF port only) and `gta4xl-24.0-mali-cves` (port + security fixes) were
-folded into it; their history is fully contained here.
+The former `gta4xl-24.0-bpf510` (eBPF port only) and `gta4xl-24.0-mali-cves`
+(port + security fixes) were folded into this branch; their history is fully
+contained here.
 
 ## Security at a glance
 
@@ -215,7 +222,10 @@ memevents programs are skipped.
 
 ## Updating
 
-New fixes go on top of `gta4xl-24.0` as single commits with the upstream
+This branch is archived (see the top of this file); the notes below are kept
+for anyone who continues from it.
+
+New fixes went on top of `gta4xl-24.0` as single commits with the upstream
 reference (`commit X upstream` / `cherry picked from commit X`), no parallel
 branches.
 
