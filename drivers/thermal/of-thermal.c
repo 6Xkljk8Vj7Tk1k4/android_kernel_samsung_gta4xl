@@ -276,7 +276,13 @@ static int of_thermal_bind(struct thermal_zone_device *thermal,
 		if (tbp->cooling_device == cdev->np) {
 			int ret;
 
-#if defined(CONFIG_EXYNOS_THERMAL_V2)
+			/*
+			 * The step_wise zones of an Exynos get their limits from the ECT table as
+			 * frequencies (the device tree says <0 0> for every trip). The v1 TMU driver
+			 * of the Exynos 9610 needs the conversion as much as the v2 one: without it
+			 * the LITTLE and ISP zones never throttled.
+			 */
+#if defined(CONFIG_EXYNOS_THERMAL_V2) || defined(CONFIG_EXYNOS_THERMAL)
 			/* if governor is not power_allocator */
 			if (strncasecmp(thermal->tzp->governor_name, "power_allocator",
 						THERMAL_NAME_LENGTH)) {
