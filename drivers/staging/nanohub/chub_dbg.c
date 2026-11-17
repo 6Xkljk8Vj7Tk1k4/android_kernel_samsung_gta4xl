@@ -22,6 +22,7 @@
 #endif
 #ifdef CONFIG_SENSORS_SSP
 #include "../../sensorhub/ssp_platform.h"
+#define SUPPORT_DUMP_ON_DRIVER
 #endif
 
 #define NUM_OF_GPR (17)
@@ -65,15 +66,6 @@ static void chub_dbg_dump_gpr(struct contexthub_ipc_info *ipc)
 				  i * 4);
 		p_dump->gpr[GPR_PC_INDEX] =
 		    readl(ipc->chub_dumpgpr + REG_CHUB_DUMPGPR_PCR);
-
-		dev_info(ipc->dev, "%s: r0:0x%x, r1:0x%x, r2:0x%x, r3:0x%x, r4:0x%x, r5:0x%x, r6:0x%x, r7:0x%x\n",
-				__func__, p_dump->gpr[0], p_dump->gpr[1], p_dump->gpr[2], p_dump->gpr[3],
-				p_dump->gpr[4], p_dump->gpr[5], p_dump->gpr[6], p_dump->gpr[7]);
-
-		dev_info(ipc->dev, "%s: r8:0x%x, r9:0x%x, r10:0x%x, r11:0x%x, r12:0x%x, sp:0x%x, lr:0x%x, r15:0x%x, pc:0x%x\n",
-				__func__, p_dump->gpr[8], p_dump->gpr[9], p_dump->gpr[10], p_dump->gpr[11],
-				p_dump->gpr[12], p_dump->gpr[13], p_dump->gpr[14], p_dump->gpr[15], p_dump->gpr[16]);
-
 	}
 }
 
@@ -99,8 +91,8 @@ static void chub_dbg_write_file(struct device *dev, char *name, void *buf, int s
 
 	filp = filp_open(file_name, O_RDWR|O_CREAT|O_APPEND, 0666);
 	if (IS_ERR(filp)) {
-		dev_warn(dev, "%s: open '%s' file fail: filp:%p\n",
-			__func__, file_name, filp);
+		dev_warn(dev, "%s: open '%s' file fail\n",
+			__func__, file_name);
 		goto out;
 	}
 
@@ -116,24 +108,28 @@ out:
 #endif
 
 /* dump hw into dram (chub reserved mem) */
-void chub_dbg_dump_ram(enum chub_err_type reason)
+static void chub_dbg_dump_ram(struct contexthub_ipc_info *ipc, enum chub_err_type reason)
 {
 	if (p_dbg_dump) {
 		p_dbg_dump->time = sched_clock();
 		p_dbg_dump->reason = reason;
 
+		ipc_dump();
 		/* dump SRAM to reserved DRAM */
 		memcpy_fromio(&p_dbg_dump->sram[p_dbg_dump->sram_start],
 			      ipc_get_base(IPC_REG_DUMP),
 			      ipc_get_chub_mem_size());
-		if (reason == CHUB_ERR_KERNEL_PANIC)
-			chub_dbg_dump_gpr(&p_dbg_dump->chub);
 	}
 }
 
 static void chub_dbg_dump_status(struct contexthub_ipc_info *ipc)
 {
 	int i;
+	char *dbg_name[CHUB_ERR_MAX] = {"none", "evtq_empty",
+		"read_fail", "write_fail", "evtq_no_hw_trigger",
+		"chub_no_resp", "itmon", "fw_fault", "fw_wdt",
+		"fw_err", "comms_nack", "comms_busy",
+		"comms_unknown", "comms", "reset_cnt", "fw_dbg"};
 
 #ifdef CONFIG_CHRE_SENSORHUB_HAL
 	struct nanohub_data *data = ipc->data;
@@ -150,14 +146,13 @@ static void chub_dbg_dump_status(struct contexthub_ipc_info *ipc)
 	/* print error status */
 	for (i = 0; i < CHUB_ERR_MAX; i++) {
 		if (ipc->err_cnt[i])
-			dev_info(ipc->dev, "%s: err(%d) : err_cnt:%d times\n",
-				__func__, i, ipc->err_cnt[i]);
+			dev_info(ipc->dev, "%s: err(%d:%s) %d times\n",
+				__func__, i, dbg_name[i], ipc->err_cnt[i]);
 	}
 
 #ifdef USE_FW_DUMP
 	contexthub_ipc_write_event(ipc, MAILBOX_EVT_DUMP_STATUS);
 #endif
-	ipc_dump();
 	log_flush(ipc->fw_log);
 }
 
@@ -167,13 +162,13 @@ void chub_dbg_dump_hw(struct contexthub_ipc_info *ipc, enum chub_err_type reason
 	dev_info(ipc->dev, "%s: reason:%d\n", __func__, reason);
 
 	chub_dbg_dump_gpr(ipc);
-	chub_dbg_dump_ram(reason);
+	chub_dbg_dump_ram(ipc, reason);
 
 #ifdef CONFIG_CHRE_SENSORHUB_HAL
 	nanohub_add_dump_request(ipc->data);
 #endif
 #ifdef CONFIG_SENSORS_SSP
-	ssp_dump_write_file(&p_dbg_dump->sram[p_dbg_dump->sram_start], ipc_get_chub_mem_size(), reason);
+	ssp_dump_write_file(ipc->ssp_data, &p_dbg_dump->sram[p_dbg_dump->sram_start], ipc_get_chub_mem_size(), reason);
 #endif
 
 #ifdef SUPPORT_DUMP_ON_DRIVER
@@ -182,10 +177,8 @@ void chub_dbg_dump_hw(struct contexthub_ipc_info *ipc, enum chub_err_type reason
 #ifdef	CONFIG_CONTEXTHUB_DEBUG
 		/* write file */
 		dev_info(ipc->dev,
-			"%s: write file: sram:%p, dram:%p(off:%d), size:%d\n",
-			__func__, ipc_get_base(IPC_REG_DUMP),
-			&p_dbg_dump->sram[p_dbg_dump->sram_start],
-			p_dbg_dump->sram_start, ipc_get_chub_mem_size());
+			"%s: write file: size:%d\n",
+			__func__, ipc_get_chub_mem_size());
 
 		chub_dbg_write_file(ipc->dev, "dram",
 			p_dbg_dump, sizeof(struct dbg_dump));
@@ -245,6 +238,9 @@ static ssize_t chub_bin_sram_read(struct file *file, struct kobject *kobj,
 				  struct bin_attribute *battr, char *buf,
 				  loff_t off, size_t size)
 {
+	struct device *dev = kobj_to_dev(kobj);
+
+	dev_info(dev, "%s(%lld, %zu)\n", __func__, off, size);
 	memcpy_fromio(buf, battr->private + off, size);
 	return size;
 }
@@ -253,6 +249,9 @@ static ssize_t chub_bin_dram_read(struct file *file, struct kobject *kobj,
 				  struct bin_attribute *battr, char *buf,
 				  loff_t off, size_t size)
 {
+	struct device *dev = kobj_to_dev(kobj);
+
+	dev_info(dev, "%s(%lld, %zu)\n", __func__, off, size);
 	memcpy(buf, battr->private + off, size);
 	return size;
 }
@@ -265,27 +264,17 @@ static ssize_t chub_bin_dumped_sram_read(struct file *file, struct kobject *kobj
 	return size;
 }
 
-static ssize_t chub_bin_logbuf_dram_read(struct file *file, struct kobject *kobj,
-				  struct bin_attribute *battr, char *buf,
-				  loff_t off, size_t size)
-{
-	memcpy(buf, battr->private + off, size);
-	return size;
-}
-
 static BIN_ATTR_RO(chub_bin_sram, 0);
 static BIN_ATTR_RO(chub_bin_dram, 0);
 static BIN_ATTR_RO(chub_bin_dumped_sram, 0);
-static BIN_ATTR_RO(chub_bin_logbuf_dram, 0);
 
 static struct bin_attribute *chub_bin_attrs[] = {
 	&bin_attr_chub_bin_sram,
 	&bin_attr_chub_bin_dram,
 	&bin_attr_chub_bin_dumped_sram,
-	&bin_attr_chub_bin_logbuf_dram,
 };
 
-#define SIZE_UTC_NAME (32)
+#define SIZE_UTC_NAME (16)
 
 char chub_utc_name[][SIZE_UTC_NAME] = {
 	[IPC_DEBUG_UTC_STOP] = "stop",
@@ -306,18 +295,6 @@ char chub_utc_name[][SIZE_UTC_NAME] = {
 	[IPC_DEBUG_UTC_HEAP_DEBUG] = "heap",
 	[IPC_DEBUG_UTC_HANG] = "hang",
 	[IPC_DEBUG_UTC_HANG_ITMON] = "itmon",
-	[IPC_DEBUG_UTC_HANG_IPC_C2A_FULL] = "ipc_c2a_evt_full",
-	[IPC_DEBUG_UTC_HANG_IPC_C2A_CRASH] = "ipc_c2a_evt_crash",
-	[IPC_DEBUG_UTC_HANG_IPC_C2A_DATA_FULL] = "ipc_c2a_data_full",
-	[IPC_DEBUG_UTC_HANG_IPC_C2A_DATA_CRASH] = "ipc_c2a_data_crash",
-	[IPC_DEBUG_UTC_HANG_IPC_A2C_FULL] = "ipc_a2c_evt_full",
-	[IPC_DEBUG_UTC_HANG_IPC_A2C_CRASH] = "ipc_a2c_evt_crash",
-	[IPC_DEBUG_UTC_HANG_IPC_A2C_DATA_FULL] = "ipc_a2c_data_full",
-	[IPC_DEBUG_UTC_HANG_IPC_A2C_DATA_CRASH] = "ipc_a2c_data_crash",
-	[IPC_DEBUG_UTC_HANG_IPC_LOGBUF_EQ_CRASH] = "ipc_logbuf_eq_crash",
-	[IPC_DEBUG_UTC_HANG_IPC_LOGBUF_DQ_CRASH] = "ipc_logbuf_dq_crash",
-	[IPC_DEBUG_UTC_HANG_INVAL_INT] = "ipc_inval_int",
-	[IPC_DEBUG_UTC_REBOOT] = "reboot(CSP_REBOOT)",
 };
 
 static ssize_t chub_alive_show(struct device *dev,
@@ -363,9 +340,6 @@ static ssize_t chub_utc_store(struct device *dev,
 
 	if (!err) {
 		contexthub_ipc_write_event(ipc, event);
-
-		if (event >= IPC_DEBUG_UTC_HANG_IPC_C2A_FULL)
-			ipc_dump();
 		return count;
 	} else {
 		return 0;
@@ -501,40 +475,6 @@ static ssize_t chub_wakeup_store(struct device *dev,
 	return ret ? ret : count;
 }
 
-static ssize_t chub_loglevel_show(struct device *dev,
-			     struct device_attribute *attr, char *buf)
-{
-	struct contexthub_ipc_info *ipc = dev_get_drvdata(dev);
-	enum ipc_fw_loglevel loglevel = ipc->chub_rt_log.loglevel;
-	int index = 0;
-
-	dev_info(dev, "%s: %d\n", __func__, loglevel);
-	index += sprintf(buf, "%d:%s, %d:%s, %d:%s\n", CHUB_RT_LOG_OFF, "off", CHUB_RT_LOG_DUMP, "dump-only", CHUB_RT_LOG_DUMP_PRT, "dump-prt");
-	index += sprintf(buf + index, "cur-loglevel: %d: %s\n", loglevel, !loglevel ? "off" : ((loglevel == CHUB_RT_LOG_DUMP) ? "dump-only" : "dump-prt"));
-
-	return index;
-}
-
-static ssize_t chub_loglevel_store(struct device *dev,
-				      struct device_attribute *attr,
-				      const char *buf, size_t count)
-{
-	struct contexthub_ipc_info *ipc = dev_get_drvdata(dev);
-	long event;
-	int ret;
-
-	ret = kstrtol(&buf[0], 10, &event);
-	if (ret)
-		return ret;
-
-	ipc->chub_rt_log.loglevel = (enum ipc_fw_loglevel)event;
-	dev_info(dev, "%s: %d->%d\n", __func__, event, ipc->chub_rt_log.loglevel);
-	contexthub_ipc_write_event(ipc, MAILBOX_EVT_RT_LOGLEVEL);
-
-	return ret ? ret : count;
-}
-
-
 static struct device_attribute attributes[] = {
 	__ATTR(get_gpr, 0440, chub_get_gpr_show, NULL),
 	__ATTR(dump_status, 0220, NULL, chub_get_dump_status_store),
@@ -542,8 +482,7 @@ static struct device_attribute attributes[] = {
 	__ATTR(utc, 0664, chub_utc_show, chub_utc_store),
 	__ATTR(ipc_test, 0220, NULL, chub_ipc_store),
 	__ATTR(alive, 0440, chub_alive_show, NULL),
-	__ATTR(wakeup_debug, 0220, NULL, chub_wakeup_store),
-	__ATTR(loglevel, 0664, chub_loglevel_show, chub_loglevel_store),
+	__ATTR(wakeup, 0220, NULL, chub_wakeup_store),
 };
 
 void *chub_dbg_get_memory(enum dbg_dump_area area)
@@ -551,7 +490,7 @@ void *chub_dbg_get_memory(enum dbg_dump_area area)
 	void *addr;
 	int size;
 
-	pr_info("%s: chub_rmem: %p\n", __func__, chub_rmem);
+	pr_info("%s: chub_rmem\n", __func__);
 
 	if (!chub_rmem)
 		return NULL;
@@ -568,7 +507,7 @@ void *chub_dbg_get_memory(enum dbg_dump_area area)
 	return addr;
 }
 
-int chub_dbg_init(struct contexthub_ipc_info *chub, void *kernel_logbuf, int kernel_logbuf_size)
+int chub_dbg_init(struct contexthub_ipc_info *chub)
 {
 	int i, ret = 0;
 	enum dbg_dump_area area;
@@ -595,9 +534,6 @@ int chub_dbg_init(struct contexthub_ipc_info *chub, void *kernel_logbuf, int ker
 
 	bin_attr_chub_bin_sram.size = ipc_get_chub_mem_size();
 	bin_attr_chub_bin_sram.private = ipc_get_base(IPC_REG_DUMP);
-
-	bin_attr_chub_bin_logbuf_dram.size = kernel_logbuf_size;
-	bin_attr_chub_bin_logbuf_dram.private = kernel_logbuf;
 
 	if (chub_rmem->size < get_dbg_dump_size())
 		dev_err(dev,
@@ -654,18 +590,15 @@ int chub_dbg_init(struct contexthub_ipc_info *chub, void *kernel_logbuf, int ker
 	p_dbg_dump->info[area].size = bin_attr_chub_bin_sram.size;
 
 	dev_info(dev,
-		"%s(%pa) is mapped on %p (sram %p: startoffset:%d) with size of %u, dump size %u\n",
-		"dump buffer", &chub_rmem->base, phys_to_virt(chub_rmem->base),
-		&p_dbg_dump->sram[p_dbg_dump->sram_start],
-		p_dbg_dump->sram_start,
-		(u32)chub_rmem->size, get_dbg_dump_size());
+		"%s is mapped (startoffset:%d) with size of %u, dump size %u\n",
+		"dump buffer", p_dbg_dump->sram_start, (u32)chub_rmem->size, get_dbg_dump_size());
 
 	return ret;
 }
 
 static int __init contexthub_rmem_setup(struct reserved_mem *rmem)
 {
-	pr_info("%s: base=%pa, size=%pa\n", __func__, &rmem->base, &rmem->size);
+	pr_info("%s", __func__);
 
 	chub_rmem = rmem;
 	p_dbg_dump = phys_to_virt(rmem->base);

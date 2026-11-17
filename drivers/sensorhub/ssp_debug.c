@@ -16,9 +16,7 @@
 #include <linux/kernel.h>
 #include <linux/io.h>
 #include <linux/slab.h>
-#include <linux/version.h>
 #include <linux/wait.h>
-#include <linux/delay.h>
 
 #include "ssp_debug.h"
 #include "ssp_type_define.h"
@@ -28,20 +26,18 @@
 #include "ssp_data.h"
 #include "ssp_scontext.h"
 #include "ssp_cmd_define.h"
-#include "ssp_sysfs.h"
 
 /* define */
 #define SSP_DEBUG_TIMER_SEC     (5 * HZ)
 #define LIMIT_TIMEOUT_CNT       1
-#define LIMIT_COMFAIL_CNT       3
+#define LIMIT_COMFAIL_CNT		3
 
 int ssp_wait_event_timeout(struct ssp_waitevent *lock, int timeout)
 {
 	int ret;
-
 	ret =  wait_event_interruptible_timeout(lock->waitqueue, atomic_read(&lock->state), msecs_to_jiffies(timeout));
 
-	if (ret == 0)
+	if(ret == 0)
 		return FAIL;
 	else
 		return SUCCESS;
@@ -60,37 +56,32 @@ void ssp_wake_up_wait_event(struct ssp_waitevent *lock)
 
 void reset_mcu(struct ssp_data *data, int reason)
 {
-	if (work_busy(&data->work_reset) || !atomic_read(&data->reset_lock.state)) {
+	if(work_busy(&data->work_reset)) {
 		ssp_infof("reset work state : pending or running");
 		return;
 	}
-#if defined(CONFIG_SSP_SENSOR_HUB_MTK)
-	if (reason == RESET_TYPE_KERNEL_COM_FAIL) {
-		ssp_infof("skip reset work (mtk), reason : %d", reason);
-		return;
-	}
-#endif
+
 	ssp_infof("- reason(%u) pending(%u)", reason, !list_empty(&data->pending_list));
 	data->reset_type = reason;
 
 	data->cnt_ssp_reset[RESET_TYPE_MAX]++;
-	if (data->reset_type < RESET_TYPE_MAX)
+	if(data->reset_type < RESET_TYPE_MAX)
 		data->cnt_ssp_reset[data->reset_type]++;
 
 	ssp_lock_wait_event(&data->reset_lock);
 	queue_work(data->debug_wq, &data->work_reset);
+	return;
 }
 
 void reset_task(struct work_struct *work)
 {
 	struct ssp_data *data = container_of((struct work_struct *)work,
-					     struct ssp_data, work_reset);
+	                                     struct ssp_data, work_reset);
 	int ret;
-
 	ssp_infof("");
 	disable_timestamp_sync_timer(data);
 	ret = sensorhub_reset(data);
-	if (ret < 0) {
+	if(ret < 0)	{
 		ssp_errf("reset failed");
 		ssp_wake_up_wait_event(&data->reset_lock);
 	}
@@ -100,16 +91,15 @@ static void check_no_event(struct ssp_data *data)
 {
 	u64 timestamp = get_current_timestamp();
 	int check_sensors[] = {SENSOR_TYPE_ACCELEROMETER, SENSOR_TYPE_GEOMAGNETIC_FIELD,
-			       SENSOR_TYPE_GYROSCOPE, SENSOR_TYPE_PRESSURE, SENSOR_TYPE_MAGNETIC_FIELD_UNCALIBRATED,
-			       SENSOR_TYPE_GAME_ROTATION_VECTOR, SENSOR_TYPE_GYROSCOPE_UNCALIBRATED
-			      };
+		SENSOR_TYPE_GYROSCOPE, SENSOR_TYPE_PRESSURE, SENSOR_TYPE_MAGNETIC_FIELD_UNCALIBRATED,
+		SENSOR_TYPE_GAME_ROTATION_VECTOR, SENSOR_TYPE_GYROSCOPE_UNCALIBRATED};
 
-	int len = ARRAY_SIZE(check_sensors);
+	int len = sizeof(check_sensors) / sizeof(check_sensors[0]);
 	int i, sensor, ret;
 	char buffer[9] = {0,};
 	bool check_reset = false;
 
-	if (data->check_noevent_reset_cnt >= 0 && data->check_noevent_reset_cnt == data->cnt_reset)
+	if(data->check_noevent_reset_cnt >= 0 && data->check_noevent_reset_cnt == data->cnt_reset)
 		check_reset = true;
 
 	data->check_noevent_reset_cnt = -1;
@@ -117,163 +107,156 @@ static void check_no_event(struct ssp_data *data)
 	for (i = 0 ; i < len ; i++) {
 		sensor = check_sensors[i];
 		/* The sensor is registered
-			And none batching mode
-			And there is no sensor event over 5sec */
+		   And none batching mode
+		   And there is no sensor event over 5sec */
 		if (data->en_info[sensor].enabled
 		    && data->delay[sensor].max_report_latency == 0
 		    && data->latest_timestamp[sensor] + 5000000000ULL < timestamp) {
 
-			if (check_reset) {
+			if(check_reset) {
 				data->check_noevent_reset_cnt = -1;
 				reset_mcu(data, RESET_TYPE_KERNEL_NO_EVENT);
 				break;
 			}
 			data->check_noevent_reset_cnt = data->cnt_reset;
 
-			ssp_infof("sensor(%d) last = %lld, cur = %lld",
-				  sensor, data->latest_timestamp[sensor], timestamp);
+			ssp_infof("sensor(%d) last = %lld, cur = %lld", sensor, data->latest_timestamp[sensor], timestamp);
 
 			buffer[0] = sensor;
 			memcpy(&buffer[1], &(data->delay[sensor]), sizeof(data->delay[sensor]));
-			ret = ssp_send_command(data, CMD_SETVALUE, TYPE_MCU, NO_EVENT_CHECK, 0, buffer, sizeof(buffer),
-					       NULL, NULL);
-			if (ret < 0)
+			ret = ssp_send_command(data, CMD_SETVALUE, TYPE_MCU, NO_EVENT_CHECK, 0, buffer, sizeof(buffer), NULL, NULL);
+			if(ret < 0)
 				ssp_errf("type %d no event comm failed ret %d", sensor, ret);
-			else
-				break;
 		}
 	}
 }
 
 static void print_sensordata(struct ssp_data *data, unsigned int sensor_type)
 {
-	if (sensor_type < SENSOR_TYPE_MAX) {
+	if(sensor_type < SENSOR_TYPE_MAX)
+	{
 		switch (sensor_type) {
 		case SENSOR_TYPE_ACCELEROMETER:
 		case SENSOR_TYPE_GYROSCOPE:
 		case SENSOR_TYPE_INTERRUPT_GYRO:
 			ssp_info("%s(%u) : %d, %d, %d (%lld) (%ums, %dms)", data->info[sensor_type].name, sensor_type,
-				 data->buf[sensor_type].x, data->buf[sensor_type].y,
-				 data->buf[sensor_type].z,
-				 data->buf[sensor_type].timestamp,
-				 data->delay[sensor_type].sampling_period,
-				 data->delay[sensor_type].max_report_latency);
+			         data->buf[sensor_type].x, data->buf[sensor_type].y,
+			         data->buf[sensor_type].z,
+			         data->buf[sensor_type].timestamp,
+			         data->delay[sensor_type].sampling_period,
+			         data->delay[sensor_type].max_report_latency);
 			break;
 		case SENSOR_TYPE_GEOMAGNETIC_FIELD:
-			ssp_info("%s(%u) : %d, %d, %d, %d (%lld) (%ums, %dms)",
-				 data->info[sensor_type].name, sensor_type,
-				 data->buf[sensor_type].cal_x, data->buf[sensor_type].cal_y,
-				 data->buf[sensor_type].cal_z, data->buf[sensor_type].accuracy,
-				 data->buf[sensor_type].timestamp,
-				 data->delay[sensor_type].sampling_period,
-				 data->delay[sensor_type].max_report_latency);
+			ssp_info("%s(%u) : %d, %d, %d, %d (%lld) (%ums, %dms)", data->info[sensor_type].name, sensor_type,
+			         data->buf[sensor_type].cal_x, data->buf[sensor_type].cal_y,
+			         data->buf[sensor_type].cal_z, data->buf[sensor_type].accuracy,
+			         data->buf[sensor_type].timestamp,
+			         data->delay[sensor_type].sampling_period,
+			         data->delay[sensor_type].max_report_latency);
 			break;
-		case SENSOR_TYPE_ACCELEROMETER_UNCALIBRATED:
 		case SENSOR_TYPE_MAGNETIC_FIELD_UNCALIBRATED:
 		case SENSOR_TYPE_GYROSCOPE_UNCALIBRATED:
-			ssp_info("%s(%u) : %d, %d, %d, %d, %d, %d (%lld) (%ums, %dms)",
-				 data->info[sensor_type].name, sensor_type,
-				 data->buf[sensor_type].uncal_x,
-				 data->buf[sensor_type].uncal_y,
-				 data->buf[sensor_type].uncal_z,
-				 data->buf[sensor_type].offset_x,
-				 data->buf[sensor_type].offset_y,
-				 data->buf[sensor_type].offset_z,
-				 data->buf[sensor_type].timestamp,
-				 data->delay[sensor_type].sampling_period,
-				 data->delay[sensor_type].max_report_latency);
+			ssp_info("%s(%u) : %d, %d, %d, %d, %d, %d (%lld) (%ums, %dms)", data->info[sensor_type].name, sensor_type,
+			         data->buf[sensor_type].uncal_x,
+			         data->buf[sensor_type].uncal_y,
+			         data->buf[sensor_type].uncal_z,
+			         data->buf[sensor_type].offset_x,
+			         data->buf[sensor_type].offset_y,
+			         data->buf[sensor_type].offset_z,
+			         data->buf[sensor_type].timestamp,
+			         data->delay[sensor_type].sampling_period,
+			         data->delay[sensor_type].max_report_latency);
 			break;
 		case SENSOR_TYPE_PRESSURE:
-			ssp_info("%s(%u) : %d, %d (%lld) (%ums, %dms)",
-				 data->info[sensor_type].name, sensor_type,
-				 data->buf[sensor_type].pressure,
-				 data->buf[sensor_type].temperature,
-				 data->buf[sensor_type].timestamp,
-				 data->delay[sensor_type].sampling_period,
-				 data->delay[sensor_type].max_report_latency);
+			ssp_info("%s(%u) : %d, %d (%lld) (%ums, %dms)", data->info[sensor_type].name, sensor_type,
+			         data->buf[sensor_type].pressure,
+			         data->buf[sensor_type].temperature,
+			         data->buf[sensor_type].timestamp,
+			         data->delay[sensor_type].sampling_period,
+			         data->delay[sensor_type].max_report_latency);
 			break;
 		case SENSOR_TYPE_LIGHT:
 			ssp_info("%s(%u) : %u, %u (%lld) (%ums, %dms)", data->info[sensor_type].name, sensor_type,
-				 data->buf[sensor_type].lux,
-				 data->buf[sensor_type].cct,
-				 data->buf[sensor_type].timestamp,
-				 data->delay[sensor_type].sampling_period,
-				 data->delay[sensor_type].max_report_latency);
+			         data->buf[sensor_type].lux,
+			         data->buf[sensor_type].cct,
+			         data->buf[sensor_type].timestamp,
+			         data->delay[sensor_type].sampling_period,
+			         data->delay[sensor_type].max_report_latency);
 			break;
 		case SENSOR_TYPE_LIGHT_CCT:
 			ssp_info("%s(%u) : %u, %u, %u (%lld) (%ums, %dms)", data->info[sensor_type].name, sensor_type,
-				 data->buf[sensor_type].lux,
-				 data->buf[sensor_type].cct,
-				 data->buf[sensor_type].raw_lux,
-				 data->buf[sensor_type].timestamp,
-				 data->delay[sensor_type].sampling_period,
-				 data->delay[sensor_type].max_report_latency);
+			         data->buf[sensor_type].lux,
+			         data->buf[sensor_type].cct,
+			         data->buf[sensor_type].raw_lux,
+			         data->buf[sensor_type].timestamp,
+			         data->delay[sensor_type].sampling_period,
+			         data->delay[sensor_type].max_report_latency);
 			break;
 		case SENSOR_TYPE_PROXIMITY:
 			ssp_info("%s(%u) : %d, %d (%lld) (%ums, %dms)", data->info[sensor_type].name, sensor_type,
-				 data->buf[sensor_type].prox, data->buf[sensor_type].prox_ex,
-				 data->buf[sensor_type].timestamp,
-				 data->delay[sensor_type].sampling_period,
-				 data->delay[sensor_type].max_report_latency);
+			         data->buf[sensor_type].prox, data->buf[sensor_type].prox_ex,
+			         data->buf[sensor_type].timestamp,
+			         data->delay[sensor_type].sampling_period,
+			         data->delay[sensor_type].max_report_latency);
 			break;
 		case SENSOR_TYPE_STEP_DETECTOR:
 			ssp_info("%s(%u) : %u (%lld)  (%ums, %dms)", data->info[sensor_type].name, sensor_type,
-				 data->buf[sensor_type].step_det,
-				 data->buf[sensor_type].timestamp,
-				 data->delay[sensor_type].sampling_period,
-				 data->delay[sensor_type].max_report_latency);
+			         data->buf[sensor_type].step_det,
+			         data->buf[sensor_type].timestamp,
+			         data->delay[sensor_type].sampling_period,
+			         data->delay[sensor_type].max_report_latency);
 			break;
 		case SENSOR_TYPE_GAME_ROTATION_VECTOR:
 		case SENSOR_TYPE_ROTATION_VECTOR:
-			ssp_info("%s(%u) : %d, %d, %d, %d, %d (%lld) (%ums, %dms)",
-				 data->info[sensor_type].name, sensor_type,
-				 data->buf[sensor_type].quat_a, data->buf[sensor_type].quat_b,
-				 data->buf[sensor_type].quat_c, data->buf[sensor_type].quat_d,
-				 data->buf[sensor_type].acc_rot,
-				 data->buf[sensor_type].timestamp,
-				 data->delay[sensor_type].sampling_period,
-				 data->delay[sensor_type].max_report_latency);
+			ssp_info("%s(%u) : %d, %d, %d, %d, %d (%lld) (%ums, %dms)", data->info[sensor_type].name, sensor_type,
+			         data->buf[sensor_type].quat_a, data->buf[sensor_type].quat_b,
+			         data->buf[sensor_type].quat_c, data->buf[sensor_type].quat_d,
+			         data->buf[sensor_type].acc_rot,
+			         data->buf[sensor_type].timestamp,
+			         data->delay[sensor_type].sampling_period,
+			         data->delay[sensor_type].max_report_latency);
 			break;
 		case SENSOR_TYPE_SIGNIFICANT_MOTION:
 			ssp_info("%s(%u) : %u (%lld) (%ums, %dms)", data->info[sensor_type].name, sensor_type,
-				 data->buf[sensor_type].sig_motion,
-				 data->buf[sensor_type].timestamp,
-				 data->delay[sensor_type].sampling_period,
-				 data->delay[sensor_type].max_report_latency);
+			         data->buf[sensor_type].sig_motion,
+			         data->buf[sensor_type].timestamp,
+			         data->delay[sensor_type].sampling_period,
+			         data->delay[sensor_type].max_report_latency);
 			break;
 		case SENSOR_TYPE_STEP_COUNTER:
 			ssp_info("%s(%u) : %u (%lld) (%ums, %dms)", data->info[sensor_type].name, sensor_type,
-				 data->buf[sensor_type].step_diff,
-				 data->buf[sensor_type].timestamp,
-				 data->delay[sensor_type].sampling_period,
-				 data->delay[sensor_type].max_report_latency);
+			         data->buf[sensor_type].step_diff,
+			         data->buf[sensor_type].timestamp,
+			         data->delay[sensor_type].sampling_period,
+			         data->delay[sensor_type].max_report_latency);
 			break;
 		case SENSOR_TYPE_LIGHT_AUTOBRIGHTNESS:
 			ssp_info("%s(%u) : %u, %u, %u (%lld) (%ums, %dms)", data->info[sensor_type].name, sensor_type,
-				 data->buf[sensor_type].ab_lux,
-				 data->buf[sensor_type].ab_min_flag,
-				 data->buf[sensor_type].ab_brightness,
-				 data->buf[sensor_type].timestamp,
-				 data->delay[sensor_type].sampling_period,
-				 data->delay[sensor_type].max_report_latency);
+			         data->buf[sensor_type].ab_lux,
+			         data->buf[sensor_type].ab_min_flag,
+			         data->buf[sensor_type].ab_brightness,
+			         data->buf[sensor_type].timestamp,
+			         data->delay[sensor_type].sampling_period,
+			         data->delay[sensor_type].max_report_latency);
 			break;
 		default:
-			ssp_info("%s(%u) : (%lld) (%ums, %dms)", data->info[sensor_type].name, sensor_type,
-				 data->buf[sensor_type].timestamp,
-				 data->delay[sensor_type].sampling_period,
-				 data->delay[sensor_type].max_report_latency);
+			ssp_info("%s(%u) : (%ums, %dms)", data->info[sensor_type].name, sensor_type,
+			         data->delay[sensor_type].sampling_period,
+			         data->delay[sensor_type].max_report_latency);
 
 			break;
 		}
 
-	} else {
+	}
+	else
+	{
 		char name[SENSOR_NAME_MAX_LEN] = "";
-
 		get_ss_sensor_name(data, sensor_type, name, SENSOR_NAME_MAX_LEN);
-		ssp_info("%s(%u) : (%lld)", name, sensor_type - SS_SENSOR_TYPE_BASE,
-			 data->latest_timestamp[sensor_type]);
+		ssp_info("%s(%u)", name, sensor_type);
 	}
 }
+
+
 
 static void debug_work_func(struct work_struct *work)
 {
@@ -288,42 +271,28 @@ static void debug_work_func(struct work_struct *work)
 		  data->cnt_ssp_reset[RESET_TYPE_KERNEL_NO_EVENT], data->cnt_ssp_reset[RESET_TYPE_HUB_NO_EVENT]);
 
 	for (type = 0; type < SS_SENSOR_TYPE_MAX; type++)
-		if (data->en_info[type].enabled)
+		if(data->en_info[type].enabled) {
 			print_sensordata(data, type);
+		}
 
-#ifdef CONFIG_SENSORS_SSP_MAGNETIC
-	if (data->new_magcal)
-		save_mag_cal_data(data);
-#endif
-
-	if (is_sensorhub_working(data))
+	if(is_sensorhub_working(data))
 		check_no_event(data);
+
 }
 
-#if (KERNEL_VERSION(4, 15, 0) <= LINUX_VERSION_CODE)
 static void debug_timer_func(struct timer_list *timer)
 {
-	struct ssp_data *data = container_of(timer, struct ssp_data, debug_timer);
+	struct ssp_data *data = from_timer(data, timer, debug_timer);
 
 	queue_work(data->debug_wq, &data->work_debug);
 	mod_timer(&data->debug_timer,
-		  round_jiffies_up(jiffies + SSP_DEBUG_TIMER_SEC));
+	          round_jiffies_up(jiffies + SSP_DEBUG_TIMER_SEC));
 }
-#else
-static void debug_timer_func(unsigned long ptr)
-{
-	struct ssp_data *data = (struct ssp_data *)ptr;
-
-	queue_work(data->debug_wq, &data->work_debug);
-	mod_timer(&data->debug_timer,
-		  round_jiffies_up(jiffies + SSP_DEBUG_TIMER_SEC));
-}
-#endif
 
 void enable_debug_timer(struct ssp_data *data)
 {
 	mod_timer(&data->debug_timer,
-		  round_jiffies_up(jiffies + SSP_DEBUG_TIMER_SEC));
+	          round_jiffies_up(jiffies + SSP_DEBUG_TIMER_SEC));
 }
 
 void disable_debug_timer(struct ssp_data *data)
@@ -334,14 +303,12 @@ void disable_debug_timer(struct ssp_data *data)
 
 int initialize_debug_timer(struct ssp_data *data)
 {
-#if (KERNEL_VERSION(4, 15, 0) <= LINUX_VERSION_CODE)
 	timer_setup(&data->debug_timer, debug_timer_func, 0);
-#else
-	setup_timer(&data->debug_timer, debug_timer_func, (unsigned long)data);
-#endif
+
 	data->debug_wq = create_singlethread_workqueue("ssp_debug_wq");
-	if (!data->debug_wq)
+	if (!data->debug_wq) {
 		return -ENOMEM;
+	}
 
 	INIT_WORK(&data->work_debug, debug_work_func);
 	return 0;
@@ -357,7 +324,7 @@ int print_mcu_debug(char *dataframe, int *index, int dataframe_length)
 
 	if (length > dataframe_length - *index || length <= 0) {
 		ssp_infof("[M] invalid debug length(%u/%d/%d)",
-			  length, dataframe_length, cur);
+		          length, dataframe_length, cur);
 		return length ? length : -1;
 	}
 
@@ -367,10 +334,9 @@ int print_mcu_debug(char *dataframe, int *index, int dataframe_length)
 }
 
 #define SSP_LOG_MAX_BYTE	200
-#define LOG_UNIT_SIZE		3
 void print_dataframe(struct ssp_data *data, char *dataframe, int frame_len)
 {
-	char raw_data[SSP_LOG_MAX_BYTE*LOG_UNIT_SIZE];
+	char raw_data[SSP_LOG_MAX_BYTE*4];
 	int i = 0, cur = 0;
 
 	while ((frame_len - cur) > 0) {
@@ -379,7 +345,7 @@ void print_dataframe(struct ssp_data *data, char *dataframe, int frame_len)
 
 		memset(raw_data, 0, sizeof(raw_data));
 		for (i = 0; i < pr_size; i++)
-			size += snprintf(raw_data + size, LOG_UNIT_SIZE, "%2x ", *(dataframe + cur++));
+			size += snprintf(raw_data + size, PAGE_SIZE, "%d ", *(dataframe + cur++));
 
 		ssp_info("%s", raw_data);
 	}

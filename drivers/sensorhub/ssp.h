@@ -19,24 +19,18 @@
 #include <linux/kernel.h>
 #include <linux/miscdevice.h>
 #include <linux/iio/iio.h>
+#include <linux/wakelock.h>
 #include <linux/rtc.h>
-#include <linux/pm_wakeup.h>
 
 #include "ssp_type_define.h"
 #include "ssp_platform.h"
-#include "ssp_factory.h"
-
+#include "factory/ssp_factory.h"
 #define ssp_dbg(fmt, ...) do { \
 	pr_debug("[SSP] " fmt "\n", ##__VA_ARGS__); \
 	} while (0)
 
 #define ssp_info(fmt, ...) do { \
 	pr_info("[SSP] " fmt "\n", ##__VA_ARGS__); \
-	} while (0)
-
-#define ssp_conditional(condition, fmt, ...) do { \
-	if (condition) \
-		pr_info("[SSP] " fmt "\n", ##__VA_ARGS__); \
 	} while (0)
 
 #define ssp_err(fmt, ...) do { \
@@ -55,9 +49,9 @@
 	pr_err("[SSP] %20s(%4d): " fmt "\n", __func__, __LINE__, ##__VA_ARGS__); \
 	} while (0)
 
-#define MAKE_WORD(H, L) (((((u16)H) << 8) & 0xff00) | ((((u16)L)) & 0x00ff))
-#define WORD_TO_LOW(w) ((u8)((w) & 0xff))
-#define WORD_TO_HIGH(w) ((u8)(((w) >> 8) & 0xff))
+#define MAKE_WORD(H,L) ((((u16)H) << 8 ) & 0xff00 ) | ((((u16)L)) & 0x00ff )
+#define WORD_TO_LOW(w) ((u8)((w) & 0xff ))
+#define WORD_TO_HIGH(w) ((u8)(((w) >>8 ) & 0xff))
 
 #define SUCCESS 0
 #define FAIL    -2
@@ -65,18 +59,13 @@
 
 #define DEFAULT_POLLING_DELAY   (200)
 
-#if defined(CONFIG_SENSORS_SSP_PROXIMITY_STK3X3X) || defined(CONFIG_SENSORS_SSP_PROXIMITY_STK3X6X) ||		  \
-	defined(CONFIG_SENSORS_SSP_PROXIMITY_STK3A5X)
+#ifdef CONFIG_SENSORS_SSP_PROXIMITY_STK3X3X
 #define CONFIG_SENSROS_SSP_PROXIMITY_THRESH_CAL
 #endif
-
-#ifdef CONFIG_SENSORS_SSP_PROXIMITY_STK3328
-#define CONFIG_SENSORS_SSP_PROXIMITY_FACTORY_CROSSTALK_CAL
-#endif
-
 #ifdef CONFIG_SENSORS_SSP_PROXIMITY_GP2AP110S
 #define CONFIG_SENSORS_SSP_PROXIMITY_MODIFY_SETTINGS
 #endif
+
 #define SENSOR_NAME_MAX_LEN	     35
 
 struct sensor_info {
@@ -104,12 +93,6 @@ enum {
 	SSP_ST_MAX,
 };
 
-enum {
-	SSP_LOG_EVENT_TIMESTAMP = 0,
-	SSP_LOG_DATA_PACKET,
-	SSP_LOG_MAX,
-};
-
 struct sensor_value {
 	union {
 		struct { /* accel, gyro, mag */
@@ -124,7 +107,7 @@ struct sensor_value {
 			s16 cal_z;
 			u8 accuracy;
 		} __attribute__((__packed__));
-		struct { /*uncalibrated accel, mag, gyro*/
+		struct { /*uncalibrated mag, gyro*/
 			s16 uncal_x;
 			s16 uncal_y;
 			s16 uncal_z;
@@ -208,20 +191,13 @@ struct calibraion_data {
 	s16 z;
 };
 
-#if defined(CONFIG_SENSORS_SSP_MAGNETIC_MMC5603)
+#ifdef CONFIG_SENSORS_SSP_MAGNETIC_MMC5603
 struct magnetic_calibration_data {
 	s32 offset_x;
 	s32 offset_y;
 	s32 offset_z;
 	s32 radius;
-} __attribute__((__packed__));
-#elif defined(CONFIG_SENSORS_SSP_MAGNETIC_YAS539)
-struct magnetic_calibration_data {
-	s16 offset_x;
-	s16 offset_y;
-	s16 offset_z;
-	u8 accuracy;
-} __attribute__((__packed__));
+};
 #else
 struct magnetic_calibration_data {
 	u8 accuracy;
@@ -231,7 +207,7 @@ struct magnetic_calibration_data {
 	s16 flucv_x;
 	s16 flucv_y;
 	s16 flucv_z;
-} __attribute__((__packed__));
+};
 #endif
 
 struct sensor_info;
@@ -239,12 +215,6 @@ struct sensor_info;
 struct time_info {
 	struct rtc_time tm;
 	u64 timestamp;
-};
-
-struct reset_info_t {
-	u64 timestamp;
-	struct rtc_time time;
-	int reason;
 };
 
 struct sensor_en_info {
@@ -275,29 +245,26 @@ struct sensor_spec_t {
 
 struct ssp_data {
 	bool is_probe_done;
-	struct wakeup_source *ssp_wakelock;
+	struct wake_lock ssp_wake_lock;
 	struct delayed_work work_refresh;
 
 	struct work_struct work_reset;
 	struct ssp_waitevent reset_lock;
 	int cnt_reset;
-	unsigned int cnt_ssp_reset[RESET_TYPE_MAX + 1]; /* index RESET_TYPE_MAX : total reset cnt */
+	unsigned int cnt_ssp_reset[RESET_TYPE_MAX + 1]; /* index RESET_TYPE_MAX : total reset count */
 	int check_noevent_reset_cnt;
-	struct reset_info_t reset_info;
-	int reset_type;
 
 	struct timer_list ts_sync_timer;
 	struct workqueue_struct *ts_sync_wq;
 	struct work_struct work_ts_sync;
 
-	struct work_struct work_dump;
-
 	char fw_name[50];
 	int fw_type;
 	unsigned int curr_fw_rev;
+	/* platform */
+	void *platform_data;
 
-	struct platform_device *pdev;
-
+	struct device *dev;
 	char *sensor_spec;
 	unsigned int sensor_spec_size;
 
@@ -314,13 +281,14 @@ struct ssp_data {
 	struct timer_list debug_timer;
 	struct workqueue_struct *debug_wq;
 	struct work_struct work_debug;
-	bool debug_enable[SSP_LOG_MAX];
+	bool debug_enable;
 
 	char last_ap_status;
 	char last_resume_status;
 
+	int reset_type;
+
 	char *sensor_dump[SENSOR_TYPE_MAX];
-	bool is_fs_ready;
 #ifdef CONFIG_SSP_ENG_DEBUG
 	char register_value[5];
 #endif
@@ -329,7 +297,7 @@ struct ssp_data {
 	struct mutex enable_mutex;
 	uint64_t sensor_probe_state;    /* uSensorState */
 	atomic64_t sensor_en_state;	     /* aSensorEnable */
-	u64 latest_timestamp[SS_SENSOR_TYPE_MAX];
+	u64 latest_timestamp[SENSOR_TYPE_MAX];
 
 	struct sensor_value buf[SENSOR_TYPE_MAX];
 	struct sensor_delay delay[SENSOR_TYPE_MAX];
@@ -359,7 +327,6 @@ struct ssp_data {
 #ifdef CONFIG_SENSORS_SSP_ACCELOMETER
 	struct  accelometer_sensor_operations *accel_ops;
 	int accel_position;
-	int accel_motor_coef;
 	struct calibraion_data accelcal;
 	u8 orientation_mode;
 #endif
@@ -371,16 +338,11 @@ struct ssp_data {
 #ifdef CONFIG_SENSORS_SSP_MAGNETIC
 	struct  magnetic_sensor_operations *magnetic_ops;
 	int mag_position;
-#ifdef CONFIG_SENSORS_SSP_MAGNETIC_YAS539
-	s16 pdc_matrix[PDC_SIZE];
-#else
 	unsigned char pdc_matrix[PDC_SIZE];
-#endif
 	unsigned char uFuseRomData[3];
 	unsigned char geomag_cntl_regdata;
 	bool is_geomag_raw_enabled;
 	struct magnetic_calibration_data magcal;
-	bool new_magcal;
 #endif
 #ifdef CONFIG_SENSORS_SSP_PROXIMITY
 	struct  proximity_sensor_operations *proximity_ops;
@@ -402,15 +364,6 @@ struct ssp_data {
 #else
 	u16 prox_thresh_addval[PROX_THRESH_SIZE];
 #endif
-#if defined(CONFIG_SENSORS_SSP_PROXIMITY_STK3X6X) || defined(CONFIG_SENSORS_SSP_PROXIMITY_STK3A5X)
-	u8 prox_thresh_mode;
-	u8 prox_cal_mode;
-#endif
-#endif
-#ifdef CONFIG_SENSORS_SSP_PROXIMITY_FACTORY_CROSSTALK_CAL
-	u16 prox_cal_add_value;
-	u16 prox_cal_thresh[PROX_THRESH_SIZE];
-	u16 prox_thresh_default[PROX_THRESH_SIZE];
 #endif
 	int prox_trim;
 #endif
@@ -429,6 +382,10 @@ struct ssp_data {
 	int camera_lux;
 	int camera_lux_hysteresis[2];
 	int camera_br_hysteresis[2];
+#ifdef CONFIG_SENSORS_SSP_CAMERALIGHT_FOR_TAB
+	int low_lux_mode;       // 0 : NONE, 1: low lux(no or high cam lux), 2: real dark
+	int report_ab_lux;
+#endif
 #endif
 #ifdef CONFIG_SENSORS_SSP_BAROMETER
 	struct  barometer_sensor_operations *barometer_ops;

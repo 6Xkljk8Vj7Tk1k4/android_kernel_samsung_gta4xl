@@ -13,7 +13,7 @@
  *
  */
 #include <linux/slab.h>
-
+ 
 #include "ssp_sensor_dump.h"
 #include "ssp_cmd_define.h"
 #include "ssp_comm.h"
@@ -21,9 +21,8 @@
 static bool is_support_registerdump(int sensor_type)
 {
 	int types[] = SENSOR_DUMP_SENSOR_LIST;
-	int list_len = (int)(ARRAY_SIZE(types));
+	int list_len = (int)(sizeof(types) / sizeof(types[0]));
 	int i, ret = false;
-
 	for (i = 0; i < list_len ; i++) {
 		if (types[i] == sensor_type) {
 			ret = true;
@@ -51,12 +50,12 @@ static int store_sensor_dump(struct ssp_data *data, int sensor_type, u16 length,
 	pr_info("[SSP] %s - type %d, length %d\n", __func__, sensor_type, length);
 
 	/*make file contents*/
-	contents = kzalloc(dump_len, GFP_KERNEL);
+	contents = (char *)kzalloc(dump_len, GFP_KERNEL);
 
 	for (i = 0; i < length; i++) {
 		tmp_ch = ((i % NUM_LINE_ITEM == NUM_LINE_ITEM - 1) || (i - 1 == length)) ? '\n' : ' ';
 		snprintf(contents + i * LENGTH_1BYTE_HEXA_WITH_BLANK, dump_len - i * LENGTH_1BYTE_HEXA_WITH_BLANK,
-			 "%02x%c", buf[i], tmp_ch);
+		         "%02x%c", buf[i], tmp_ch);
 	}
 
 	if (data->sensor_dump[sensor_type] != NULL) {
@@ -74,10 +73,10 @@ static int store_sensor_dump(struct ssp_data *data, int sensor_type, u16 length,
 	snprintf(file_name, SENSOR_DUMP_FILE_LENGTH, "%s%d.txt", SENSOR_DUMP_PATH, sensor_type);
 
 	dump_filp = filp_open(file_name,
-			      O_CREAT | O_TRUNC | O_WRONLY | O_SYNC, 0640);
+	                      O_CREAT | O_TRUNC | O_WRONLY | O_SYNC, 0640);
 
 	if (IS_ERR(dump_filp)) {
-		pr_err("[SSP] %s - Can't open dump file %d\n", __func__, sensor_type);
+		pr_err("[SSP] %s - Can't open dump file %d \n", __func__, sensor_type);
 		set_fs(old_fs);
 		ret = PTR_ERR(dump_filp);
 		return ret;
@@ -117,12 +116,13 @@ int send_sensor_dump_command(struct ssp_data *data, u8 sensor_type)
 	}
 
 	ret = ssp_send_command(data, CMD_GETVALUE, sensor_type, SENSOR_REGISTER_DUMP, 1000, NULL, 0,
-			       &buffer, &buffer_length);
+	                       &buffer, &buffer_length);
 
 	if (ret != SUCCESS) {
 		ssp_errf("ssp_send_command Fail %d", ret);
-		if (buffer != NULL)
+		if (buffer != NULL) {
 			kfree(buffer);
+		}
 		return ret;
 	}
 
@@ -144,12 +144,11 @@ int send_all_sensor_dump_command(struct ssp_data *data)
 {
 	int types[] = SENSOR_DUMP_SENSOR_LIST;
 	int i, ret = SUCCESS;
-
-	for (i = 0; i < ARRAY_SIZE(types); i++) {
-		int temp = send_sensor_dump_command(data, types[i]);
-
-		if (temp != SUCCESS)
+	for (i = 0; i < sizeof(types) / sizeof(types[0]); i++) {
+		int temp;
+		if ((temp = send_sensor_dump_command(data, types[i])) != SUCCESS) {
 			ret = temp;
+		}
 	}
 
 	return ret;

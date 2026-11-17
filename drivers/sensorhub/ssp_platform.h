@@ -16,39 +16,37 @@
 #ifndef __SSP_PLATFORM_H__
 #define __SSP_PLATFORM_H__
 
+
 #include <linux/kernel.h>
-#include <linux/platform_device.h>
-#include <linux/device.h>
 
-#define SSP_BOOTLOADER_FILE     "sensorhub/shub_nacho_bl.bin"
+struct ssp_data;
 
-int ssp_device_probe(struct platform_device *pdev);
-void ssp_device_remove(struct platform_device *pdev);
-int ssp_device_suspend(struct device *dev);
-void ssp_device_resume(struct device *dev);
+#define SSP_BOOTLOADER_FILE     "sensorhub/shub_bl.fw"
 
-void ssp_platform_init(void*);
-void ssp_handle_recv_packet(char*, int);
-void ssp_platform_start_refrsh_task(void);
+void *ssp_device_probe(struct device *);
+void ssp_device_remove(void *ssp_data);
+void ssp_device_suspend(void *ssp_data);
+void ssp_device_resume(void *ssp_data);
+
+void ssp_platform_init(void *ssp_data, void *);
+void ssp_handle_recv_packet(void *ssp_data, char *, int);
+void ssp_platform_start_refrsh_task(void *ssp_data);
 
 int sensorhub_reset(void *ssp_data);
+int sensorhub_shutdown(void *ssp_data);
 int sensorhub_firmware_download(void *ssp_data);
 
+int sensorhub_comms_read(void *ssp_data, u8 *buf, int length, int timeout);
 int sensorhub_comms_write(void *ssp_data, u8 *buf, int length, int timeout);
 
-void save_ram_dump(void* ssp_data);
+void save_ram_dump(void *ssp_data);
 int get_sensorhub_dump_size(void);
-void* get_sensorhub_dump_address(void);
-void ssp_dump_write_file(void *dump_data, int dump_size, int err_type);
+void *get_sensorhub_dump_address(void);
+void ssp_dump_write_file(void *ssp_data, void *dump_data, int dump_size, int err_type);
 
 bool is_sensorhub_working(void *ssp_data);
 
-int ssp_download_firmware(void *addr);
-void ssp_set_firmware_name(const char *fw_name);
-
-void sensorhub_fs_ready(void *ssp_data);
-int sensorhub_platform_probe(void *ssp_data);
-int sensorhub_platform_shutdown(void *ssp_data);
-int sensorhub_refresh_func(void *ssp_data);
+int ssp_download_firmware(void *ssp_data, struct device *dev, void *addr);
+void ssp_set_firmware_name(void *ssp_data, const char *fw_name);
 
 #endif /* __SSP_PLATFORM_H__ */

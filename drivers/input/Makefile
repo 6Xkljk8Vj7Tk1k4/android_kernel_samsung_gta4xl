@@ -25,7 +25,10 @@ obj-$(CONFIG_INPUT_KEYBOARD)	+= keyboard/
 obj-$(CONFIG_INPUT_MOUSE)	+= mouse/
 obj-$(CONFIG_INPUT_JOYSTICK)	+= joystick/
 obj-$(CONFIG_INPUT_TABLET)	+= tablet/
+# touchscreen before the pen, as on 4.14: the ROM's SELinux policy labels the
+# touchscreen's sysfs nodes by path, input number included (input1)
 obj-$(CONFIG_INPUT_TOUCHSCREEN)	+= touchscreen/
+obj-$(CONFIG_INPUT_WACOM)	+= wacom/
 obj-$(CONFIG_INPUT_MISC)	+= misc/
 
 obj-$(CONFIG_INPUT_APMPOWER)	+= apm-power.o

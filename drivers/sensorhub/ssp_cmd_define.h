@@ -1,5 +1,5 @@
 /* command */
-enum {
+typedef enum {
 	CMD_ADD = 0,
 	CMD_REMOVE,
 	CMD_CHANGERATE,
@@ -7,10 +7,10 @@ enum {
 	CMD_GETVALUE,
 	CMD_REPORT,
 	CMD_MAX,
-};
+} SSP_COMMAND;
 
 /* sub command */
-enum {
+typedef enum {
 	AP_SHUTDOWN = 0,
 	AP_RESUME,
 	AP_SUSPEND,
@@ -71,9 +71,8 @@ enum {
 	NO_EVENT_CHECK,
 	MOTOR_ON,
 	MOTOR_OFF,
-	HUB_SYSTEM_CHECK,
 	CMD_VALUE_MAX,
-};
+} VALUE_TYPE;
 
 /* CONVERT VALUE FOR SEM CONTEXT*/
 #define SCONTEXT_AP_STATUS_SHUTDOWN                   0xD0

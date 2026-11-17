@@ -1342,7 +1342,15 @@ static void __exit gpio_keys_exit(void)
 	platform_driver_unregister(&gpio_keys_device_driver);
 }
 
+/*
+ * late, as in the 4.14 vendor kernel: the keys register after the touchscreen and
+ * the pen, which keeps the input device numbers user space was built around
+ */
+#ifdef CONFIG_SOC_EXYNOS9610
+late_initcall(gpio_keys_init);
+#else
 module_init(gpio_keys_init);
+#endif
 module_exit(gpio_keys_exit);
 
 MODULE_LICENSE("GPL");

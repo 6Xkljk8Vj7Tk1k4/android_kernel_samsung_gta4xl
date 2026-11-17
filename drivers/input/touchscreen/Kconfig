@@ -1300,7 +1300,18 @@ config TOUCHSCREEN_ROHM_BU21023
 	  To compile this driver as a module, choose M here: the
 	  module will be called bu21023_ts.
 
+if SOC_EXYNOS9610
+# gta4xl: the in-cell HX83102E driver of the 4.14 tree
+config TOUCHSCREEN_HIMAX_CHIPSET
+	bool "Himax touchpanel CHIPSET"
+	help
+		Say Y here if you have a Himax CHIPSET touchscreen.
+
+source "drivers/input/touchscreen/himax/himax_83102E/Kconfig"
+endif
+if !SOC_EXYNOS9610
 source "drivers/input/touchscreen/himax/himax_83112/Kconfig"
+endif
 source "drivers/input/touchscreen/synaptics/td4150/Kconfig"
 source "drivers/input/touchscreen/novatek/nt36525/Kconfig"
 endif

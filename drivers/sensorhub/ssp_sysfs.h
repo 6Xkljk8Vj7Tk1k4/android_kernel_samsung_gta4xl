@@ -18,6 +18,7 @@
 
 #include "ssp.h"
 
+
 int initialize_sysfs(struct ssp_data *);
 void remove_sysfs(struct ssp_data *);
 

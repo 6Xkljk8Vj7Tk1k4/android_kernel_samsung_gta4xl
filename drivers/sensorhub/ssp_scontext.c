@@ -23,17 +23,18 @@
 #include <linux/uaccess.h>
 
 void ssp_scontext_log(const char *func_name,
-		      const char *data, int length)
+                              const char *data, int length)
 {
 	char buf[6];
 	char *log_str;
 	int log_size;
 	int i;
 
-	if (likely(length <= BIG_DATA_SIZE))
+	if (likely(length <= BIG_DATA_SIZE)) {
 		log_size = length;
-	else
+	} else {
 		log_size = PRINT_TRUNCATE * 2 + 1;
+	}
 
 	log_size = sizeof(buf) * log_size + 1;
 	log_str = kzalloc(log_size, GFP_ATOMIC);
@@ -48,11 +49,13 @@ void ssp_scontext_log(const char *func_name,
 			snprintf(buf, sizeof(buf), "0x%x", (unsigned char)data[i]);
 			strlcat(log_str, buf, log_size);
 
-			if (i < length - 1)
+			if (i < length - 1) {
 				strlcat(log_str, ", ", log_size);
+			}
 		}
-		if (length > BIG_DATA_SIZE && i == PRINT_TRUNCATE)
+		if (length > BIG_DATA_SIZE && i == PRINT_TRUNCATE) {
 			strlcat(log_str, "..., ", log_size);
+		}
 	}
 
 	ssp_info("%s(%d): %s", func_name, length, log_str);
@@ -60,7 +63,7 @@ void ssp_scontext_log(const char *func_name,
 }
 
 static int ssp_scontext_send_cmd(struct ssp_data *data,
-				 const char *buf, int count)
+                                  const char *buf, int count)
 {
 	int ret = 0;
 
@@ -73,12 +76,14 @@ static int ssp_scontext_send_cmd(struct ssp_data *data,
 	ret = ssp_send_status(data, buf[2]);
 
 	if (buf[2] == SCONTEXT_AP_STATUS_WAKEUP ||
-	    buf[2] == SCONTEXT_AP_STATUS_SLEEP)
+	    buf[2] == SCONTEXT_AP_STATUS_SLEEP) {
 		data->last_ap_status = buf[2];
+	}
 
 	if (buf[2] == SCONTEXT_AP_STATUS_SUSPEND ||
-	    buf[2] == SCONTEXT_AP_STATUS_RESUME)
+	    buf[2] == SCONTEXT_AP_STATUS_RESUME) {
 		data->last_resume_status = buf[2];
+	}
 
 	return ret;
 }
@@ -93,12 +98,11 @@ static int ssp_scontext_send_cmd(struct ssp_data *data,
 int convert_scontext_putvalue_subcmd(int subcmd)
 {
 	int ret = -1;
-
 	switch (subcmd) {
-	case SCONTEXT_VALUE_CURRENTSYSTEMTIME:
+	case SCONTEXT_VALUE_CURRENTSYSTEMTIME :
 		ret = CURRENT_SYSTEM_TIME;
 		break;
-	case SCONTEXT_VALUE_PEDOMETER_USERHEIGHT:
+	case SCONTEXT_VALUE_PEDOMETER_USERHEIGHT :
 		ret = PEDOMETER_USERHEIGHT;
 		break;
 	case SCONTEXT_VALUE_PEDOMETER_USERWEIGHT:
@@ -120,12 +124,11 @@ int convert_scontext_putvalue_subcmd(int subcmd)
 int convert_scontext_getvalue_subcmd(int subcmd)
 {
 	int ret = -1;
-
 	switch (subcmd) {
-	case SCONTEXT_VALUE_CURRENTSTATUS:
+	case SCONTEXT_VALUE_CURRENTSTATUS :
 		ret = LIBRARY_CURRENTSTATUS;
 		break;
-	case SCONTEXT_VALUE_CURRENTSTATUS_BATCH:
+	case SCONTEXT_VALUE_CURRENTSTATUS_BATCH :
 		ret = LIBRARY_CURRENTSTATUS_BATCH;
 		break;
 	case SCONTEXT_VALUE_VERSIONINFO:
@@ -140,50 +143,49 @@ int convert_scontext_getvalue_subcmd(int subcmd)
 
 void get_ss_sensor_name(struct ssp_data *data, int type, char *buf, int buf_size)
 {
-	memset(buf, 0, buf_size);
-	switch (type) {
-	case SS_SENSOR_TYPE_PEDOMETER:
-		strncpy(buf, "pedometer", buf_size);
-		break;
-	case SS_SENSOR_TYPE_STEP_COUNT_ALERT:
-		strncpy(buf, "step count alert", buf_size);
-		break;
-	case SS_SENSOR_TYPE_AUTO_ROTATION:
-		strncpy(buf, "auto rotation", buf_size);
-		break;
-	case SS_SENSOR_TYPE_SLOCATION:
-		strncpy(buf, "slocation", buf_size);
-		break;
-	case SS_SENSOR_TYPE_MOVEMENT:
-		strncpy(buf, "smart alert", buf_size);
-		break;
-	case SS_SENSOR_TYPE_ACTIVITY_TRACKER:
-		strncpy(buf, "activity tracker", buf_size);
-		break;
-	case SS_SENSOR_TYPE_DPCM:
-		strncpy(buf, "dpcm", buf_size);
-		break;
-	case SS_SENSOR_TYPE_SENSOR_STATUS_CHECK:
-		strncpy(buf, "sensor status check", buf_size);
-		break;
-	case SS_SENSOR_TYPE_ACTIVITY_CALIBRATION:
-		strncpy(buf, "activity calibration", buf_size);
-		break;
-	case SS_SENSOR_TYPE_DEVICE_POSITION:
-		strncpy(buf, "device position", buf_size);
-		break;
-	case SS_SENSOR_TYPE_CHANGE_LOCATION_TRIGGER:
-		strncpy(buf, "change location trigger", buf_size);
-		break;
-	case SS_SENSOR_TYPE_FREE_FALL_DETECTION:
-		strncpy(buf, "free fall detection", buf_size);
-		break;
-	}
+        memset(buf, 0, buf_size);
+        switch (type) {
+                case SS_SENSOR_TYPE_PEDOMETER:
+                        strncpy(buf, "pedometer", buf_size);
+                        break;
+                case SS_SENSOR_TYPE_STEP_COUNT_ALERT:
+                        strncpy(buf, "step count alert", buf_size);
+                        break;
+                case SS_SENSOR_TYPE_AUTO_ROTATION:
+                        strncpy(buf, "auto rotation", buf_size);
+                        break;
+                case SS_SENSOR_TYPE_SLOCATION:
+                        strncpy(buf, "slocation", buf_size);
+                        break;
+                case SS_SENSOR_TYPE_MOVEMENT:
+                        strncpy(buf, "smart alert", buf_size);
+                        break;
+                case SS_SENSOR_TYPE_ACTIVITY_TRACKER:
+                        strncpy(buf, "activity tracker", buf_size);
+                        break;
+                case SS_SENSOR_TYPE_DPCM:
+                        strncpy(buf, "dpcm", buf_size);
+                        break;
+                case SS_SENSOR_TYPE_SENSOR_STATUS_CHECK:
+                        strncpy(buf, "sensor status check", buf_size);
+                        break;
+                case SS_SENSOR_TYPE_ACTIVITY_CALIBRATION:
+                        strncpy(buf, "activity calibration", buf_size);
+                        break;
+                case SS_SENSOR_TYPE_DEVICE_POSITION:
+                        strncpy(buf, "device position", buf_size);
+                        break;
+                case SS_SENSOR_TYPE_CHANGE_LOCATION_TRIGGER:
+                        strncpy(buf, "change location trigger", buf_size);
+                        break;
+        }
+
+        return;
 }
 
 
 static int ssp_scontext_send_instruction(struct ssp_data *data,
-					 const char *buf, int count)
+                                          const char *buf, int count)
 {
 	char command, type, sub_cmd = 0;
 	char *buffer = (char *)(buf + 2);
@@ -193,22 +195,26 @@ static int ssp_scontext_send_instruction(struct ssp_data *data,
 	if (buf[0] == SCONTEXT_INST_LIBRARY_REMOVE) {
 		command = CMD_REMOVE;
 		type = buf[1] + SS_SENSOR_TYPE_BASE;
-		if (type < SS_SENSOR_TYPE_MAX) {
+		if(type < SS_SENSOR_TYPE_MAX)
+		{
 			get_ss_sensor_name(data, type, name, sizeof(name));
 			ssp_infof("REMOVE LIB %s, type %d", name, type);
 
 			return disable_sensor(data, type, buffer, length);
-		} else
+		}
+		else
 			return -EINVAL;
 	} else if (buf[0] == SCONTEXT_INST_LIBRARY_ADD) {
 		command = CMD_ADD;
 		type = buf[1] + SS_SENSOR_TYPE_BASE;
-		if (type < SS_SENSOR_TYPE_MAX) {
+		if(type < SS_SENSOR_TYPE_MAX)
+		{
 			get_ss_sensor_name(data, type, name, sizeof(name));
 			ssp_infof("ADD LIB, type %d", type);
 
 			return enable_sensor(data, type, buffer, length);
-		} else
+		}
+		else
 			return ERROR;
 	} else if (buf[0] == SCONTEXT_INST_LIB_SET_DATA) {
 		command = CMD_SETVALUE;
@@ -219,31 +225,33 @@ static int ssp_scontext_send_instruction(struct ssp_data *data,
 			type = buf[2] + SS_SENSOR_TYPE_BASE;
 			sub_cmd = LIBRARY_DATA;
 			length = count - 3;
-			if (length > 0)
+			if (length > 0) {
 				buffer = (char *)(buf + 3);
-			else
+			} else {
 				buffer = NULL;
+			}
 		}
 	} else if (buf[0] == SCONTEXT_INST_LIB_GET_DATA) {
 		command = CMD_GETVALUE;
 		type = buf[1] + SS_SENSOR_TYPE_BASE;
 		sub_cmd =  convert_scontext_getvalue_subcmd(buf[2]);
 		length = count - 3;
-		if (length > 0)
+		if (length > 0) {
 			buffer = (char *)(buf + 3);
-		else
+		} else {
 			buffer = NULL;
+		}
 	} else {
 		ssp_errf("0x%x is not supported", buf[0]);
 		return ERROR;
 	}
 
 	return ssp_send_command(data, command, type, sub_cmd, 0,
-				buffer, length, NULL, NULL);
+	                        buffer, length, NULL, NULL);
 }
 
 static ssize_t ssp_scontext_write(struct file *file, const char __user *buf,
-				  size_t count, loff_t *pos)
+                                   size_t count, loff_t *pos)
 {
 	struct ssp_data *data = container_of(file->private_data, struct ssp_data, scontext_device);
 	int ret = 0;
@@ -270,18 +278,21 @@ static ssize_t ssp_scontext_write(struct file *file, const char __user *buf,
 
 	ssp_scontext_log(__func__, buffer, count);
 
-	if (buffer[0] == SCONTEXT_INST_LIB_NOTI)
+	if (buffer[0] == SCONTEXT_INST_LIB_NOTI) {
 		ret = ssp_scontext_send_cmd(data, buffer, count);
-	else
+	} else {
 		ret = ssp_scontext_send_instruction(data, buffer, count);
+	}
 
 	if (unlikely(ret < 0)) {
 		ssp_errf("send library data err(%d)", ret);
-		if (ret == ERROR)
+		if (ret == ERROR) {
 			ret = -EIO;
-
-		else if (ret == FAIL)
+		}
+		
+		else if (ret == FAIL) {
 			ret = -EAGAIN;
+		}
 
 		goto exit;
 	}
@@ -302,17 +313,17 @@ static struct file_operations ssp_scontext_fops = {
 int ssp_scontext_initialize(struct ssp_data *data)
 {
 	int ret;
-
 	ssp_dbgf("----------");
-
+	
 	/* register scontext misc device */
 	data->scontext_device.minor = MISC_DYNAMIC_MINOR;
 	data->scontext_device.name = "ssp_sensorhub";
 	data->scontext_device.fops = &ssp_scontext_fops;
 
 	ret = misc_register(&data->scontext_device);
-	if (ret < 0)
+	if (ret < 0) {
 		ssp_errf("register scontext misc device err(%d)", ret);
+	}
 
 	return ret;
 }

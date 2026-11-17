@@ -11,7 +11,6 @@
 #include <linux/fs.h>
 #include <linux/err.h>
 #include <linux/input.h>
-#include <linux/sysfs.h>
 
 struct class *sensors_class;
 EXPORT_SYMBOL_GPL(sensors_class);
@@ -22,37 +21,18 @@ static struct device *symlink_dev;
 static struct device *sensor_dev;
 static struct input_dev *meta_input_dev;
 
-static ssize_t set_flush(struct device *dev, struct device_attribute *attr,
-			 const char *buf, size_t size)
-{
-	u8 sensor_type = 0;
-
-	if (kstrtou8(buf, 10, &sensor_type) < 0)
-		return -EINVAL;
-
-	input_report_rel(meta_input_dev, REL_DIAL, 1);	/*META_DATA_FLUSH_COMPLETE*/
-	input_report_rel(meta_input_dev, REL_HWHEEL, sensor_type + 1);
-	input_sync(meta_input_dev);
-
-	pr_info("[SENSOR CORE] flush %d\n", sensor_type);
-	return size;
-}
-static DEVICE_ATTR(flush, 0220, NULL, set_flush);
-static struct device_attribute *ap_sensor_attr[] = {
-	&dev_attr_flush,
-	NULL,
-};
-
 /*
  * Create sysfs interface
  */
-static void set_sensor_attr(struct device *dev, struct device_attribute *attributes[])
+static void set_sensor_attr(struct device *dev,
+                            struct device_attribute *attributes[])
 {
 	int i;
 
 	for (i = 0; attributes[i] != NULL; i++)
 		if ((device_create_file(dev, attributes[i])) < 0)
-			pr_err("[SENSOR CORE] fail device_create_file (dev, attributes[%d])\n", i);
+			pr_err("[SENSOR CORE] fail device_create_file"
+			       "(dev, attributes[%d])\n", i);
 }
 
 int sensors_create_symlink(struct input_dev *inputdev)
@@ -64,7 +44,8 @@ int sensors_create_symlink(struct input_dev *inputdev)
 		return err;
 	}
 
-	err = sysfs_create_link(&symlink_dev->kobj, &inputdev->dev.kobj, inputdev->name);
+	err = sysfs_create_link(&symlink_dev->kobj, &inputdev->dev.kobj,
+	                        inputdev->name);
 
 	if (err < 0) {
 		pr_err("%s, %s failed!(%d)\n", __func__, inputdev->name, err);
@@ -77,23 +58,26 @@ EXPORT_SYMBOL_GPL(sensors_create_symlink);
 
 void sensors_remove_symlink(struct input_dev *inputdev)
 {
+
 	if (symlink_dev == NULL) {
 		pr_err("%s, symlink_dev is NULL!!!\n", __func__);
 		return;
 	}
 
-	sysfs_delete_link(&symlink_dev->kobj, &inputdev->dev.kobj, inputdev->name);
+	sysfs_delete_link(&symlink_dev->kobj, &inputdev->dev.kobj,
+	                  inputdev->name);
 }
 EXPORT_SYMBOL_GPL(sensors_remove_symlink);
 
-int sensors_device_register(struct device **pdev, void *drvdata, struct device_attribute *attributes[], char *name)
+int sensors_device_register(struct device **pdev, void *drvdata,
+                     struct device_attribute *attributes[], char *name)
 {
-	struct device *dev;
-
+	struct device* dev;
 	if (!sensors_class) {
 		sensors_class = class_create(THIS_MODULE, "sensors");
-		if (IS_ERR(sensors_class))
+		if (IS_ERR(sensors_class)) {
 			return PTR_ERR(sensors_class);
+		}
 	}
 
 	dev = device_create(sensors_class, NULL, 0, drvdata, "%s", name);
@@ -102,7 +86,8 @@ int sensors_device_register(struct device **pdev, void *drvdata, struct device_a
 		int ret = 0;
 
 		ret = PTR_ERR(dev);
-		pr_err("[SENSORS CORE] device_create failed! [%d]\n", ret);
+		pr_err("[SENSORS CORE] device_create failed!"\
+		       "[%d]\n", ret);
 		return ret;
 	}
 
@@ -114,12 +99,14 @@ int sensors_device_register(struct device **pdev, void *drvdata, struct device_a
 }
 EXPORT_SYMBOL_GPL(sensors_device_register);
 
-int sensors_register(struct device *dev, void *drvdata, struct device_attribute *attributes[], char *name)
+int sensors_register(struct device *dev, void *drvdata,
+                     struct device_attribute *attributes[], char *name)
 {
 	if (!sensors_class) {
 		sensors_class = class_create(THIS_MODULE, "sensors");
-		if (IS_ERR(sensors_class))
+		if (IS_ERR(sensors_class)) {
 			return PTR_ERR(sensors_class);
+		}
 	}
 
 	dev = device_create(sensors_class, NULL, 0, drvdata, "%s", name);
@@ -128,7 +115,8 @@ int sensors_register(struct device *dev, void *drvdata, struct device_attribute 
 		int ret = 0;
 
 		ret = PTR_ERR(dev);
-		pr_err("[SENSORS CORE] device_create failed![%d]\n", ret);
+		pr_err("[SENSORS CORE] device_create failed!"\
+		       "[%d]\n", ret);
 		return ret;
 	}
 
@@ -139,12 +127,14 @@ int sensors_register(struct device *dev, void *drvdata, struct device_attribute 
 }
 EXPORT_SYMBOL_GPL(sensors_register);
 
-void sensors_unregister(struct device *dev, struct device_attribute *attributes[])
+void sensors_unregister(struct device *dev,
+                        struct device_attribute *attributes[])
 {
 	int i;
 
-	for (i = 0; attributes[i] != NULL; i++)
+	for (i = 0; attributes[i] != NULL; i++) {
 		device_remove_file(dev, attributes[i]);
+	}
 }
 EXPORT_SYMBOL_GPL(sensors_unregister);
 
@@ -165,6 +155,28 @@ void destroy_sensor_class(void)
 	}
 }
 EXPORT_SYMBOL_GPL(destroy_sensor_class);
+
+static ssize_t set_flush(struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t size)
+{
+	u8 sensor_type = 0;
+
+	if (kstrtou8(buf, 10, &sensor_type) < 0)
+		return -EINVAL;
+
+	input_report_rel(meta_input_dev, REL_DIAL,
+		1);	/*META_DATA_FLUSH_COMPLETE*/
+	input_report_rel(meta_input_dev, REL_HWHEEL, sensor_type + 1);
+	input_sync(meta_input_dev);
+
+	pr_info("[SENSOR CORE] flush %d\n", sensor_type);
+	return size;
+}
+static DEVICE_ATTR(flush, 0220, NULL, set_flush);
+static struct device_attribute *ap_sensor_attr[] = {
+	&dev_attr_flush,
+	NULL,
+};
 
 int sensors_meta_input_init(void)
 {
@@ -206,35 +218,38 @@ void sensors_meta_input_clean(void)
 
 static int __init sensors_class_init(void)
 {
-	pr_info("[SENSORS CORE] %s\n", __func__);
+	pr_info("[SENSORS CORE] sensors_class_init\n");
 	sensors_class = class_create(THIS_MODULE, "sensors");
 	if (IS_ERR(sensors_class)) {
-		pr_err("%s, create sensors_class is failed.(err=%d)\n", __func__, IS_ERR(sensors_class));
+		pr_err("%s, create sensors_class is failed.(err=%d)\n",
+		       __func__, IS_ERR(sensors_class));
 		return PTR_ERR(sensors_class);
 	}
 
 	/* For symbolic link */
 	sensors_event_class = class_create(THIS_MODULE, "sensor_event");
 	if (IS_ERR(sensors_event_class)) {
-		pr_err("%s, create sensors_class is failed.(err=%d)\n", __func__, IS_ERR(sensors_event_class));
+		pr_err("%s, create sensors_class is failed.(err=%d)\n",
+		       __func__, IS_ERR(sensors_event_class));
 		class_destroy(sensors_class);
 		return PTR_ERR(sensors_event_class);
 	}
 
-	symlink_dev = device_create(sensors_event_class, NULL, 0, NULL, "%s", "symlink");
+	symlink_dev = device_create(sensors_event_class, NULL, 0, NULL,
+	                            "%s", "symlink");
 	if (IS_ERR(symlink_dev)) {
-		pr_err("[SENSORS CORE] symlink_dev create failed![%d]\n", IS_ERR(symlink_dev));
+		pr_err("[SENSORS CORE] symlink_dev create failed!"\
+		       "[%d]\n", IS_ERR(symlink_dev));
 		class_destroy(sensors_class);
 		class_destroy(sensors_event_class);
 		return PTR_ERR(symlink_dev);
 	}
 
-	/* For flush sysfs */
 	sensor_dev = device_create(sensors_class, NULL, 0, NULL,
-				   "%s", "sensor_dev");
+		"%s", "sensor_dev");
 	if (IS_ERR(sensor_dev)) {
 		pr_err("[SENSORS CORE] sensor_dev create failed![%d]\n",
-		       IS_ERR(sensor_dev));
+			IS_ERR(sensor_dev));
 	} else {
 		if ((device_create_file(sensor_dev, *ap_sensor_attr)) < 0)
 			pr_err("[SENSOR CORE] failed flush device_file\n");
@@ -242,8 +257,11 @@ static int __init sensors_class_init(void)
 
 	atomic_set(&sensor_count, 0);
 	sensors_class->dev_uevent = NULL;
+	pr_info("[SENSORS CORE] sensors_class_init succcess\n");
+
 	sensors_meta_input_init();
-	pr_info("[SENSORS CORE] %s succcess\n", __func__);
+
+	pr_info("[SENSORS CORE] %s  succcess\n", __func__);
 
 	return 0;
 }

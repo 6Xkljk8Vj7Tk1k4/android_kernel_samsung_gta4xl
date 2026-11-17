@@ -23,11 +23,12 @@
 #include "chub_ipc.h"
 
 #ifdef CONFIG_CONTEXTHUB_DEBUG
-#define SIZE_OF_BUFFER (SZ_128K + SZ_128K)
+#define SIZE_OF_BUFFER (SZ_512K + SZ_128K)
 #else
 #define SIZE_OF_BUFFER (SZ_128K)
 #endif
 
+#undef CHUB_LOG_DUMP_SUPPORT
 #define S_IRWUG (0660)
 #define DEFAULT_FLUSH_MS (1000)
 
@@ -114,10 +115,11 @@ void log_flush(struct log_buffer_info *info)
 	unsigned int index_writer = buffer->index_writer;
 
 	/* check logbuf index dueto sram corruption */
-	if ((buffer->index_reader >= buffer->size)
-		|| (buffer->index_writer >= buffer->size)) {
-		dev_err(info->dev, "%s(%d): offset is corrupted. index_writer=%u, index_reader=%u, size=%u\n",
-			__func__, info->id, buffer->index_writer, buffer->index_reader, buffer->size);
+	if ((buffer->index_reader >= ipc_get_offset(IPC_REG_LOG))
+		|| (buffer->index_writer >= ipc_get_offset(IPC_REG_LOG))) {
+		dev_err(info->dev, "%s(%d): offset is corrupted. index_writer=%u, index_reader=%u, size=%u-%u\n",
+			__func__, info->id, buffer->index_writer, buffer->index_reader, buffer->size,
+			ipc_get_offset(IPC_REG_LOG));
 
 		return;
 	}
@@ -152,7 +154,7 @@ void log_flush(struct log_buffer_info *info)
 static void log_flush_all_work_func(struct work_struct *work);
 static DECLARE_DEFERRABLE_WORK(log_flush_all_work, log_flush_all_work_func);
 
-void log_flush_all(void)
+static void log_flush_all(void)
 {
 	struct log_buffer_info *info;
 
@@ -278,6 +280,7 @@ static struct dentry *chub_dbg_get_root_dir(void)
 	return dbg_root_dir;
 }
 
+#ifdef CHUB_LOG_DUMP_SUPPORT
 static void chub_log_auto_save_open(struct log_buffer_info *info)
 {
 	mm_segment_t old_fs = get_fs();
@@ -286,7 +289,7 @@ static void chub_log_auto_save_open(struct log_buffer_info *info)
 
 	/* close previous */
 	if (info->filp && !IS_ERR(info->filp)) {
-		dev_info(info->dev, "%s closing previous file %p\n", __func__, info->filp);
+		dev_info(info->dev, "%s closing previous file\n", __func__);
 		filp_close(info->filp, current->files);
 		}
 
@@ -316,8 +319,7 @@ static void chub_log_auto_save_ctrl(struct log_buffer_info *info, u32 event)
 		info->filp = NULL;
 	}
 
-	pr_info("%s: %s, %d, %p\n", __func__, info->save_file_name,
-		log_auto_save, info->filp);
+	pr_info("%s: %s, %d\n", __func__, info->save_file_name, log_auto_save);
 }
 
 static ssize_t chub_log_save_show(struct device *kobj,
@@ -355,7 +357,7 @@ static ssize_t chub_log_save_save(struct device *dev,
 		return 0;
 	}
 }
-
+#endif
 #define TMP_BUFFER_SIZE (1000)
 
 #if defined(CONFIG_CONTEXTHUB_DEBUG)
@@ -368,10 +370,11 @@ static void log_dump(struct log_buffer_info *info, int err)
 	u32 wrap_index = buffer->index_writer;
 
 	/* check logbuf index dueto sram corruption */
-	if ((buffer->index_reader >= buffer->size)
-		|| (buffer->index_writer >= buffer->size)) {
-		dev_err(info->dev, "%s(%d): offset is corrupted. index_writer=%u, index_reader=%u, size=%u\n",
-			__func__, info->id, buffer->index_writer, buffer->index_reader, buffer->size);
+	if ((buffer->index_reader >= ipc_get_offset(IPC_REG_LOG))
+		|| (buffer->index_writer >= ipc_get_offset(IPC_REG_LOG))) {
+		dev_err(info->dev, "%s(%d): offset is corrupted. index_writer=%u, index_reader=%u, size=%u-%u\n",
+			__func__, info->id, buffer->index_writer, buffer->index_reader, buffer->size,
+			ipc_get_offset(IPC_REG_LOG));
 		return;
 	}
 
@@ -384,7 +387,7 @@ static void log_dump(struct log_buffer_info *info, int err)
 
 	filp = filp_open(save_file_name, O_RDWR | O_TRUNC | O_CREAT, S_IRWUG);
 	if (IS_ERR(filp)) {
-		dev_warn(info->dev, "%s: fails filp:%p\n", __func__, filp);
+		dev_warn(info->dev, "%s: fails\n", __func__);
 		goto out;
 	}
 
@@ -397,9 +400,8 @@ static void log_dump(struct log_buffer_info *info, int err)
 		int bottom = 0;
 
 		/* dump sram-log buffer to fs (eq ~ eq + logbuf_size) */
-		dev_dbg(info->dev, "%s: logbuf:%p, eq:%d, dq:%d, size:%d, loop:%d\n", __func__,
-			(void *)buffer, wrap_index,	buffer->index_reader, buffer->size,
-			(buffer->size / TMP_BUFFER_SIZE) + 1);
+		dev_dbg(info->dev, "%s: eq:%d, dq:%d, size:%d, loop:%d\n", __func__,
+			wrap_index, buffer->index_reader, buffer->size, (buffer->size / TMP_BUFFER_SIZE) + 1);
 		for (i = 0; i < (buffer->size / TMP_BUFFER_SIZE) + 1;
 		     i++, start_index += TMP_BUFFER_SIZE) {
 			if (start_index + TMP_BUFFER_SIZE > buffer->size) {
@@ -456,19 +458,25 @@ static ssize_t chub_log_flush_save(struct device *dev,
 
 	err = kstrtol(&buf[0], 10, &event);
 	if (!err) {
-		if (!event) {
-			log_flush_all();
-		} else {
-			/* update log_flush time */
-			auto_log_flush_ms = event;
-			pr_err("%s: set flush ms:%d\n", __func__, auto_log_flush_ms);
-			schedule_delayed_work(&log_flush_all_work, msecs_to_jiffies(auto_log_flush_ms));
+		if (!auto_log_flush_ms) {
+			if (!err) {
+				log_flush_all();
+			} else {
+				pr_err("%s: fails to flush log\n", __func__);
+			}
 		}
+#ifdef CHUB_LOG_DUMP_SUPPORT
+		/* update log_flush time */
+		auto_log_flush_ms = event * 1000;
+#endif
+		if (auto_log_flush_ms)
+			dev_dbg(dev, "%s is flushed every %d ms.\n", auto_log_flush_ms);
 		return count;
 	} else {
-		pr_err("%s: fails event:%d, err:%d\n", __func__, event, err);
 		return 0;
 	}
+
+	return count;
 }
 
 static ssize_t chub_dump_log_save(struct device *dev,
@@ -480,8 +488,10 @@ static ssize_t chub_dump_log_save(struct device *dev,
 }
 
 static struct device_attribute attributes[] = {
+#ifdef CHUB_LOG_DUMP_SUPPORT
 	/* enable auto-save with flush_log */
 	__ATTR(save_log, 0664, chub_log_save_show, chub_log_save_save),
+#endif
 	/* flush sram-logbuf to dram */
 	__ATTR(flush_log, 0664, chub_log_flush_show, chub_log_flush_save),
 	/* dump sram-logbuf to file */
@@ -503,7 +513,6 @@ struct log_buffer_info *log_register_buffer(struct device *dev, int id,
 	info->id = id;
 	info->file_created = false;
 	info->kernel_buffer.buffer = vzalloc(SIZE_OF_BUFFER);
-	info->kernel_buffer.buffer_size = SIZE_OF_BUFFER;
 	info->kernel_buffer.index = 0;
 	info->kernel_buffer.index_reader = 0;
 	info->kernel_buffer.index_writer = 0;
@@ -519,9 +528,8 @@ struct log_buffer_info *log_register_buffer(struct device *dev, int id,
 	info->save_file_name[0] = '\0';
 	info->filp = NULL;
 
-	dev_info(dev, "%s with %p buffer size %d. %p kernel buffer size %d\n",
-		 __func__, buffer->buffer, buffer->size,
-		 info->kernel_buffer.buffer, SIZE_OF_BUFFER);
+	dev_info(dev, "%s with buffer size %d. kernel buffer size %d\n",
+		 __func__, buffer->size, SIZE_OF_BUFFER);
 
 	debugfs_create_file(name, S_IRWUG, chub_dbg_get_root_dir(), info,
 			    &log_fops);

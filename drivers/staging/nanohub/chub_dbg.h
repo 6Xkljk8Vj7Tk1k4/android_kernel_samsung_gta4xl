@@ -21,11 +21,10 @@ enum dbg_dump_area {
 	DBG_AREA_MAX
 };
 
-int chub_dbg_init(struct contexthub_ipc_info *chub, void *logbuf, int logbuf_size);
+int chub_dbg_init(struct contexthub_ipc_info *chub);
 void *chub_dbg_get_memory(enum dbg_dump_area area);
 void chub_dbg_dump_hw(struct contexthub_ipc_info *ipc, enum chub_err_type reason);
 void chub_dbg_print_hw(struct contexthub_ipc_info *ipc);
 int chub_dbg_check_and_download_image(struct contexthub_ipc_info *ipc);
 void chub_dbg_dump_on_reset(struct contexthub_ipc_info *ipc);
-void chub_dbg_dump_ram(enum chub_err_type reason);
 #endif /* __CHUB_DEBUG_H */

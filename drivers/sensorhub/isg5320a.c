@@ -31,7 +31,7 @@
 #include <linux/muic/common/muic.h>
 #include <linux/muic/common/muic_notifier.h>
 #endif
-#if defined(CONFIG_CCIC_NOTIFIER) || defined(CONFIG_PDIC_NOTIFIER)
+#if defined(CONFIG_PDIC_NOTIFIER) || defined(CONFIG_PDIC_NOTIFIER)
 #include <linux/usb/typec/common/pdic_notifier.h>
 #endif
 #if defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
@@ -52,7 +52,7 @@
 #define ISG5320A_TAG             "[ISG5320A]"
 
 #if IS_ENABLED(CONFIG_HALL_NEW_NODE)
-#define HALLIC_PATH            "/sys/class/sec/hall_ic/hall_detect"
+#define HALLIC_PATH	           "/sys/class/sec/hall_ic/hall_detect"
 #define HALLIC_CERT_PATH       "/sys/class/sec/hall_ic/certify_hall_detect"
 #else
 #define HALLIC_PATH            "/sys/class/sec/sec_key/hall_detect"
@@ -76,6 +76,7 @@ struct isg5320a_data {
 	struct device *dev;
 	struct delayed_work debug_work;
 	struct delayed_work cal_work;
+	struct work_struct force_cal_work;
 #ifdef ISG5320A_INIT_DELAYEDWORK
 	struct delayed_work init_work;
 #endif
@@ -84,7 +85,7 @@ struct isg5320a_data {
 #ifdef CONFIG_MUIC_NOTIFIER
 	struct notifier_block cpuidle_muic_nb;
 #endif
-#if defined(CONFIG_CCIC_NOTIFIER) || defined(CONFIG_PDIC_NOTIFIER)
+#if defined(CONFIG_PDIC_NOTIFIER) || defined(CONFIG_PDIC_NOTIFIER)
 	struct notifier_block cpuidle_ccic_nb;
 #endif
 	int gpio_int;
@@ -1483,6 +1484,13 @@ static void cal_work_func(struct work_struct *work)
 		schedule_delayed_work(&data->cal_work, msecs_to_jiffies(500));
 }
 
+static void force_cal_work_func(struct work_struct *work)
+{
+	struct isg5320a_data *data = container_of(work,
+						  struct isg5320a_data, force_cal_work);
+	isg5320a_force_calibration(data, true);
+}
+
 static void debug_work_func(struct work_struct *work)
 {
 	int ret;
@@ -1533,14 +1541,14 @@ static void debug_work_func(struct work_struct *work)
 	schedule_delayed_work(&data->debug_work, msecs_to_jiffies(2000));
 }
 
-#if (defined(CONFIG_CCIC_NOTIFIER) || defined(CONFIG_PDIC_NOTIFIER)) && defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+#if (defined(CONFIG_PDIC_NOTIFIER) || defined(CONFIG_PDIC_NOTIFIER)) && defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
 static int isg5320a_ccic_handle_notification(struct notifier_block *nb,
 					     unsigned long action, void *data)
 {
 #if defined(CONFIG_PDIC_NOTIFIER)
 	PD_NOTI_USB_STATUS_TYPEDEF usb_status = *(PD_NOTI_USB_STATUS_TYPEDEF *)data;
 #else
-	CC_NOTI_USB_STATUS_TYPEDEF usb_status = *(CC_NOTI_USB_STATUS_TYPEDEF *)data;
+	PD_NOTI_USB_STATUS_TYPEDEF usb_status = *(PD_NOTI_USB_STATUS_TYPEDEF *)data;
 #endif
 	struct isg5320a_data *pdata = container_of(nb, struct isg5320a_data,
 						   cpuidle_ccic_nb);
@@ -1562,7 +1570,7 @@ static int isg5320a_ccic_handle_notification(struct notifier_block *nb,
 		case USB_STATUS_NOTIFY_DETACH:
 			pr_info("%s - drp = %d attat = %d\n", ISG5320A_TAG, usb_status.drp,
 				usb_status.attach);
-			isg5320a_force_calibration(pdata, true);
+			schedule_work(&pdata->force_cal_work);
 			break;
 		default:
 			pr_info("%s - DRP type : %d\n", ISG5320A_TAG, usb_status.drp);
@@ -1596,7 +1604,7 @@ static int isg5320a_cpuidle_muic_notifier(struct notifier_block *nb,
 			pr_info("%s TA/USB is removed\n", ISG5320A_TAG);
 
 		if (data->initialized == ON)
-			isg5320a_force_calibration(data, true);
+			schedule_work(&pdata->force_cal_work);
 		else
 			pr_info("%s not initialized\n", ISG5320A_TAG);
 
@@ -1775,6 +1783,7 @@ static int isg5320a_probe(struct i2c_client *client,
 	wake_lock_init(&data->grip_wake_lock, WAKE_LOCK_SUSPEND, "grip_wake_lock");
 	INIT_DELAYED_WORK(&data->debug_work, debug_work_func);
 	INIT_DELAYED_WORK(&data->cal_work, cal_work_func);
+	INIT_WORK(&data->force_cal_work, force_cal_work_func);
 #ifdef ISG5320A_INIT_DELAYEDWORK
 	INIT_DELAYED_WORK(&data->init_work, init_work_func);
 	schedule_delayed_work(&data->init_work, msecs_to_jiffies(300));
@@ -1788,10 +1797,10 @@ static int isg5320a_probe(struct i2c_client *client,
 	manager_notifier_register(&data->cpuidle_ccic_nb,
 				  isg5320a_ccic_handle_notification,
 				  MANAGER_NOTIFY_PDIC_SENSORHUB);
-#elif defined(CONFIG_CCIC_NOTIFIER) && defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+#elif defined(CONFIG_PDIC_NOTIFIER) && defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
 	manager_notifier_register(&data->cpuidle_ccic_nb,
 				  isg5320a_ccic_handle_notification,
-				  MANAGER_NOTIFY_CCIC_SENSORHUB);
+				  MANAGER_NOTIFY_PDIC_SENSORHUB);
 #elif defined(CONFIG_MUIC_NOTIFIER)
 	muic_notifier_register(&data->cpuidle_muic_nb,
 			       isg5320a_cpuidle_muic_notifier, MUIC_NOTIFY_DEV_CPUIDLE);
@@ -1876,6 +1885,7 @@ static void isg5320a_shutdown(struct i2c_client *client)
 
 	pr_info("%s %s\n", ISG5320A_TAG, __func__);
 
+	cancel_work_sync(&data->force_cal_work);
 	isg5320a_set_debug_work(data, OFF, 0);
 	if (data->enable == ON)
 		isg5320a_set_enable(data, OFF);

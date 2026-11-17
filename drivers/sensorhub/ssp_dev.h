@@ -18,16 +18,11 @@
 
 #include "ssp.h"
 
-struct ssp_data *get_ssp_data(void);
+struct ssp_data *ssp_probe(struct device *);
+void ssp_remove(struct ssp_data *);
 
-int sync_sensor_data(struct ssp_data *data);
-int open_sensor_calibration_data(struct ssp_data *data);
-
+int ssp_suspend(struct ssp_data *);
+void ssp_resume(struct ssp_data *);
 int queue_refresh_task(struct ssp_data *data, int delay);
-int queue_power_on_task(struct ssp_data *data, int delay);
 
-int ssp_probe(struct platform_device *);
-void ssp_shutdown(struct platform_device *);
-int ssp_suspend(struct device *);
-void ssp_resume(struct device *);
 #endif

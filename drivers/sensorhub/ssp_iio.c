@@ -14,15 +14,12 @@
  */
 #include <linux/iio/iio.h>
 #include <linux/iio/buffer.h>
+#include <linux/iio/buffer_impl.h>
 #include <linux/iio/events.h>
+#include <linux/iio/kfifo_buf.h>
 #include <linux/iio/sysfs.h>
 #include <linux/iio/types.h>
 #include <linux/slab.h>
-#include <linux/version.h>
-#include <linux/rtc.h>
-#if (KERNEL_VERSION(4, 11, 0) <= LINUX_VERSION_CODE)
-#include <linux/iio/buffer_impl.h>
-#endif
 
 #include "ssp.h"
 #include "ssp_iio.h"
@@ -30,8 +27,6 @@
 #include "ssp_data.h"
 #include "ssp_iio.h"
 #include "ssp_scontext.h"
-#include "ssp_kfifo_buf.h"
-#include "ssp_system_checker.h"
 
 #define IIO_CHANNEL             -1
 #define IIO_SCAN_INDEX          3
@@ -42,7 +37,8 @@
 #define META_TIMESTAMP          0
 
 #define PROX_AVG_READ_NUM       80
-enum {
+enum
+{
 	PROX_RAW_NUM = 0,
 	PROX_RAW_MIN,
 	PROX_RAW_SUM,
@@ -73,16 +69,17 @@ static const struct iio_buffer_setup_ops ssp_iio_ring_setup_ops = {
 	.predisable = &ssp_predisable,
 };
 
-static int ssp_iio_configure_ring(struct iio_dev *indio_dev, int bytes)
+static int ssp_iio_configure_ring(struct iio_dev *indio_dev)
 {
 	struct iio_buffer *ring;
 
-	ring = ssp_iio_kfifo_allocate();
-	if (!ring)
+	ring = iio_kfifo_allocate();
+	if (!ring) {
 		return -ENOMEM;
+	}
 
 	ring->scan_timestamp = true;
-	ring->bytes_per_datum = bytes;
+	ring->bytes_per_datum = 8;
 	indio_dev->buffer = ring;
 	indio_dev->setup_ops = &ssp_iio_ring_setup_ops;
 	indio_dev->modes |= INDIO_BUFFER_SOFTWARE;
@@ -91,12 +88,13 @@ static int ssp_iio_configure_ring(struct iio_dev *indio_dev, int bytes)
 }
 
 static void ssp_iio_push_buffers(struct iio_dev *indio_dev, u64 timestamp,
-				 char *data, int data_len)
+                                 char *data, int data_len)
 {
 	char buf[data_len + sizeof(timestamp)];
 
-	if (!indio_dev || !data)
+	if (!indio_dev || !data) {
 		return;
+	}
 
 	memcpy(buf, data, data_len);
 	memcpy(buf + data_len, &timestamp, sizeof(timestamp));
@@ -107,7 +105,7 @@ static void ssp_iio_push_buffers(struct iio_dev *indio_dev, u64 timestamp,
 
 #ifdef CONFIG_SENSORS_SSP_PROXIMITY
 static void report_prox_raw_data(struct ssp_data *data, int type,
-				 struct sensor_value *proxrawdata)
+                                 struct sensor_value *proxrawdata)
 {
 	if (data->prox_raw_avg[PROX_RAW_NUM]++ >= PROX_AVG_READ_NUM) {
 		data->prox_raw_avg[PROX_RAW_SUM] /= PROX_AVG_READ_NUM;
@@ -122,42 +120,37 @@ static void report_prox_raw_data(struct ssp_data *data, int type,
 	} else {
 		data->prox_raw_avg[PROX_RAW_SUM] += proxrawdata->prox_raw[0];
 
-		if (data->prox_raw_avg[PROX_RAW_NUM] == 1)
+		if (data->prox_raw_avg[PROX_RAW_NUM] == 1) {
 			data->prox_raw_avg[PROX_RAW_MIN] = proxrawdata->prox_raw[0];
-		else if (proxrawdata->prox_raw[0] < data->prox_raw_avg[PROX_RAW_MIN])
+		} else if (proxrawdata->prox_raw[0] < data->prox_raw_avg[PROX_RAW_MIN]) {
 			data->prox_raw_avg[PROX_RAW_MIN] = proxrawdata->prox_raw[0];
+		}
 
-		if (proxrawdata->prox_raw[0] > data->prox_raw_avg[PROX_RAW_MAX])
+		if (proxrawdata->prox_raw[0] > data->prox_raw_avg[PROX_RAW_MAX]) {
 			data->prox_raw_avg[PROX_RAW_MAX] = proxrawdata->prox_raw[0];
+		}
 	}
 
 	data->buf[type].prox_raw[0] = proxrawdata->prox_raw[0];
 }
 
-
 static void report_prox_cal_data(struct ssp_data *data, int type,
-				 struct sensor_value *p_cal_data)
+                                 struct sensor_value *p_cal_data)
 {
-#ifdef CONFIG_SENSROS_SSP_PROXIMITY_THRESH_CAL
 	data->prox_thresh[0] = p_cal_data->prox_cal[0];
 	data->prox_thresh[1] = p_cal_data->prox_cal[1];
 	ssp_info("prox thresh %u %u", data->prox_thresh[0], data->prox_thresh[1]);
 
 	proximity_calibration_off(data);
-#ifdef CONFIG_SENSORS_SSP_PROXIMITY_STK3X6X
-	save_prox_cal_threshold_data(data);
-	proximity_open_calibration(data);
-#endif
-#endif
 }
 #endif
 
 void report_sensor_data(struct ssp_data *data, int type,
-			struct sensor_value *event)
+                        struct sensor_value *event)
 {
 	if (type == SENSOR_TYPE_PROXIMITY) {
 		ssp_info("Proximity Sensor Detect : %u, raw : %u",
-			 event->prox, event->prox_ex);
+		         event->prox, event->prox_ex);
 #ifdef CONFIG_SENSORS_SSP_PROXIMITY
 	} else if (type == SENSOR_TYPE_PROXIMITY_RAW) {
 		report_prox_raw_data(data, type, event);
@@ -170,30 +163,68 @@ void report_sensor_data(struct ssp_data *data, int type,
 #ifdef CONFIG_SENSORS_SSP_LIGHT
 		if (data->light_log_cnt < 3) {
 			ssp_info("Light Sensor : lux=%u brightness=%u r=%d g=%d b=%d c=%d atime=%d again=%d",
-				 data->buf[SENSOR_TYPE_LIGHT].lux,
-				 data->buf[SENSOR_TYPE_LIGHT].brightness,
-				 data->buf[SENSOR_TYPE_LIGHT].r, data->buf[SENSOR_TYPE_LIGHT].g,
-				 data->buf[SENSOR_TYPE_LIGHT].b,
-				 data->buf[SENSOR_TYPE_LIGHT].w, data->buf[SENSOR_TYPE_LIGHT].a_time,
-				 data->buf[SENSOR_TYPE_LIGHT].a_gain);
+					 data->buf[SENSOR_TYPE_LIGHT].lux,
+					 data->buf[SENSOR_TYPE_LIGHT].brightness,
+			         data->buf[SENSOR_TYPE_LIGHT].r, data->buf[SENSOR_TYPE_LIGHT].g,
+			         data->buf[SENSOR_TYPE_LIGHT].b,
+			         data->buf[SENSOR_TYPE_LIGHT].w, data->buf[SENSOR_TYPE_LIGHT].a_time,
+			         data->buf[SENSOR_TYPE_LIGHT].a_gain);
 			data->light_log_cnt++;
 		}
 	} else if (type == SENSOR_TYPE_LIGHT_CCT) {
 		if (data->light_cct_log_cnt < 3) {
 			ssp_info("Light cct Sensor : lux=%u r=%d g=%d b=%d c=%d atime=%d again=%d",
-				 data->buf[SENSOR_TYPE_LIGHT_CCT].lux,
-				 data->buf[SENSOR_TYPE_LIGHT_CCT].r, data->buf[SENSOR_TYPE_LIGHT_CCT].g,
-				 data->buf[SENSOR_TYPE_LIGHT_CCT].b,
-				 data->buf[SENSOR_TYPE_LIGHT_CCT].w, data->buf[SENSOR_TYPE_LIGHT_CCT].a_time,
-				 data->buf[SENSOR_TYPE_LIGHT_CCT].a_gain);
+				     data->buf[SENSOR_TYPE_LIGHT_CCT].lux,
+			         data->buf[SENSOR_TYPE_LIGHT_CCT].r, data->buf[SENSOR_TYPE_LIGHT_CCT].g,
+			         data->buf[SENSOR_TYPE_LIGHT_CCT].b,
+			         data->buf[SENSOR_TYPE_LIGHT_CCT].w, data->buf[SENSOR_TYPE_LIGHT_CCT].a_time,
+			         data->buf[SENSOR_TYPE_LIGHT_CCT].a_gain);
 			data->light_cct_log_cnt++;
 		}
 	} else if (type == SENSOR_TYPE_LIGHT_AUTOBRIGHTNESS) {
-		if (!data->camera_lux_en &&
-		    (data->buf[type].ab_lux <= data->camera_lux_hysteresis[0]) &&
-		    (data->buf[type].ab_brightness > data->camera_br_hysteresis[0])) {
 
-			if (data->light_ab_log_cnt == 0) {
+#if defined(CONFIG_SENSORS_SSP_CAMERALIGHT_FOR_TAB)
+		//ssp_infof("[%d]Light AB Sensor : lux %d ", data->low_lux_mode, data->buf[type].ab_lux);
+
+		if(data->low_lux_mode > 0 && data->buf[type].ab_lux > data->camera_lux_hysteresis[0]) {
+		    // this means that environment is bright
+		    data->low_lux_mode = 0;
+		    data->report_ab_lux = data->buf[type].ab_lux;
+		    ssp_infof("Light AB Sensor : low_lux_mode clear (%d)", data->buf[type].ab_lux);
+		    if(data->camera_lux_en) {
+				ssp_infof("Light AB Sensor : report cam disable");
+				data->camera_lux_en = false;
+				report_camera_lux_data(data, CAMERA_LUX_DISABLE);
+		    }
+		} else	if(data->low_lux_mode == 0 && (data->buf[type].ab_lux <= data->camera_lux_hysteresis[0])) {
+			if(data->light_ab_log_cnt == 0) {
+				ssp_infof("Light AB Sensor : report first lux form light sensor (%d)", data->buf[type].ab_lux);
+				report_camera_lux_data(data, data->buf[type].ab_lux);
+			}
+
+			ssp_infof("Light AB Sensor : report cam enable");
+			data->camera_lux_en = true;
+			data->low_lux_mode = 1;
+			data->report_ab_lux = data->buf[type].ab_lux;
+			data->camera_lux = -1;
+			data->buf[type].ab_lux = CAMERA_LUX_ENABLE;
+		} else if(data->camera_lux_en) {
+			data->report_ab_lux = data->buf[type].ab_lux;
+			if(data->camera_lux < 0) {
+				ssp_infof("Light AB Sensor : there is no camera lux(%d), low_lux_mode %d", data->buf[type].ab_lux, data->low_lux_mode);
+			} else if(data->low_lux_mode == 1) {
+				ssp_infof("Light AB Sensor : high cam lux mode(%d)", data->buf[type].ab_lux);
+			}
+			return;
+		}
+#else
+		if(!data->camera_lux_en &&
+			(data->buf[type].ab_lux <= data->camera_lux_hysteresis[0]) &&
+			((int)data->buf[type].ab_brightness > data->camera_br_hysteresis[0]))
+		{
+
+			if(data->light_ab_log_cnt == 0)
+			{
 				ssp_infof("Light AB Sensor : report first lux form light sensor");
 				report_camera_lux_data(data, data->buf[type].ab_lux);
 			}
@@ -201,53 +232,51 @@ void report_sensor_data(struct ssp_data *data, int type,
 			ssp_infof("Light AB Sensor : report cam enable");
 			data->camera_lux_en = true;
 			data->buf[type].ab_lux = CAMERA_LUX_ENABLE;
-		} else if (data->camera_lux_en &&
-			   ((data->buf[type].ab_lux >= data->camera_lux_hysteresis[1]) ||
-			    (data->buf[type].ab_brightness <= data->camera_br_hysteresis[1]))) {
-			ssp_infof("Light AB Sensor : report cam disable");
+		}
+		else if(data->camera_lux_en &&
+			((data->buf[type].ab_lux >= data->camera_lux_hysteresis[1]) ||
+			((int)data->buf[type].ab_brightness <= data->camera_br_hysteresis[1])))
+		{
+		    ssp_infof("Light AB Sensor : report cam disable");
 			data->camera_lux_en = false;
 			data->buf[type].ab_lux = CAMERA_LUX_DISABLE;
-		} else if (data->camera_lux_en) {
+		}
+		else if(data->camera_lux_en)
+		{
 			//ssp_infof("Light AB Sensor : report skip");
 			return;
 		}
-
+#endif //CONFIG_SENSORS_SSP_CAMERALIGHT_FOR_TAB
 		if (data->light_ab_log_cnt < 3) {
 			ssp_info("Light AB Sensor : lux=%u brightness=%u camera_lux_en=%d / %d %d %d %d",
-				 data->buf[SENSOR_TYPE_LIGHT_AUTOBRIGHTNESS].ab_lux,
-				 data->buf[SENSOR_TYPE_LIGHT_AUTOBRIGHTNESS].ab_brightness,
-				 data->camera_lux_en,
-				 data->camera_lux_hysteresis[0], data->camera_lux_hysteresis[1],
-				 data->camera_br_hysteresis[0], data->camera_br_hysteresis[1]);
+				     data->buf[SENSOR_TYPE_LIGHT_AUTOBRIGHTNESS].ab_lux,
+			        data->buf[SENSOR_TYPE_LIGHT_AUTOBRIGHTNESS].ab_brightness,
+			        data->camera_lux_en,
+			        data->camera_lux_hysteresis[0], data->camera_lux_hysteresis[1],
+			        data->camera_br_hysteresis[0], data->camera_br_hysteresis[1]);
 			data->light_ab_log_cnt++;
 		}
-#endif
-	} else if (type == SENSOR_TYPE_STEP_COUNTER)
-		data->buf[type].step_total += event->step_diff;
+#endif //CONFIG_SENSORS_SSP_LIGHT
 
-	if (!(atomic64_read(&data->sensor_en_state) & (1ULL << type))) {
+	} else if (type == SENSOR_TYPE_STEP_COUNTER) {
+		data->buf[type].step_total += event->step_diff;
+	}
+
+	if (!(atomic64_read(&data->sensor_en_state) & (1ULL << type)))
+	{
 		ssp_errf("sensor is not enabled(%d)", type);
 		return;
 	}
 
 	ssp_iio_push_buffers(data->indio_devs[type], event->timestamp,
-			     (char *)&data->buf[type], data->info[type].report_data_len);
-
+	                     (char *)&data->buf[type], data->info[type].report_data_len);
 
 	/* wake-up sensor */
 	if (type == SENSOR_TYPE_PROXIMITY || type == SENSOR_TYPE_SIGNIFICANT_MOTION
 	    || type == SENSOR_TYPE_TILT_DETECTOR || type == SENSOR_TYPE_PICK_UP_GESTURE
-	    || type == SENSOR_TYPE_WAKE_UP_MOTION)
-		__pm_wakeup_event(data->ssp_wakelock, 0.3 * HZ);
-
-#ifdef CONFIG_SSP_ENG_DEBUG
-	ssp_system_check_lock();
-	if (is_system_checking())
-		event_test_cb(type, event->timestamp);
-	if (is_event_order_checking())
-		order_test_cb(type, event->timestamp);
-	ssp_system_check_unlock();
-#endif
+	    || type == SENSOR_TYPE_WAKE_UP_MOTION) {
+		wake_lock_timeout(&data->ssp_wake_lock, 0.3 * HZ);
+	}
 }
 
 void report_camera_lux_data(struct ssp_data *data, int lux)
@@ -258,7 +287,7 @@ void report_camera_lux_data(struct ssp_data *data, int lux)
 
 	data->buf[type].ab_lux = lux;
 	ssp_iio_push_buffers(data->indio_devs[type], get_current_timestamp(),
-			     (char *)&data->buf[type], data->info[type].report_data_len);
+	                     (char *)&data->buf[type], data->info[type].report_data_len);
 
 }
 
@@ -271,15 +300,9 @@ void report_meta_data(struct ssp_data *data, struct sensor_value *s)
 	memset(meta_event, META_EVENT,
 	       data->info[s->meta_data.sensor].report_data_len);
 	ssp_iio_push_buffers(data->indio_devs[s->meta_data.sensor],
-			     META_TIMESTAMP, meta_event,
-			     data->info[s->meta_data.sensor].report_data_len);
+	                     META_TIMESTAMP, meta_event,
+	                     data->info[s->meta_data.sensor].report_data_len);
 	kfree(meta_event);
-#ifdef CONFIG_SSP_ENG_DEBUG
-	ssp_system_check_lock();
-	if (is_system_checking())
-		comm_test_cb(s->meta_data.sensor);
-	ssp_system_check_unlock();
-#endif
 }
 
 void report_scontext_data(struct ssp_data *data, char *data_buf, u32 length)
@@ -290,21 +313,14 @@ void report_scontext_data(struct ssp_data *data, char *data_buf, u32 length)
 
 	ssp_scontext_log(__func__, data_buf, length);
 
-	if (data_buf[0] == 0x01 && data_buf[1] == 0x01) {
-		int type = data_buf[2] + SS_SENSOR_TYPE_BASE;
-
-		if (type < SS_SENSOR_TYPE_MAX)
-			data->latest_timestamp[type] = get_current_timestamp();
-	}
-
 	start = 0;
 	memcpy(buf, &length, sizeof(u32));
 	timestamp = get_current_timestamp();
 
 	while (start < length) {
-		if (start + SCONTEXT_DATA_LEN < length)
+		if (start + SCONTEXT_DATA_LEN < length) {
 			end = start + SCONTEXT_DATA_LEN - 1;
-		else {
+		} else {
 			memset(buf + SCONTEXT_HEADER_LEN, 0, SCONTEXT_DATA_LEN);
 			end = length - 1;
 		}
@@ -313,21 +329,21 @@ void report_scontext_data(struct ssp_data *data, char *data_buf, u32 length)
 		memcpy(buf + sizeof(length) + sizeof(start), &end, sizeof(u16));
 		memcpy(buf + SCONTEXT_HEADER_LEN, data_buf + start, end - start + 1);
 
-		/*
-			ssp_infof("[%d, %d, %d] 0x%x 0x%x 0x%x 0x%x// 0x%x 0x%x// 0x%x 0x%x",
-				length, start, end,
-				buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
+/*
+        ssp_infof("[%d, %d, %d] 0x%x 0x%x 0x%x 0x%x// 0x%x 0x%x// 0x%x 0x%x",
+                length, start, end,
+                buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
 
 
-			ssp_infof("0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x",
-				buf[8], buf[9], buf[10], buf[11], buf[12], buf[13], buf[14], buf[15]);
+        ssp_infof("0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x",
+                buf[8], buf[9], buf[10], buf[11], buf[12], buf[13], buf[14], buf[15]);
 
 
-			ssp_infof("0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x, //0x%llx",
-				buf[16], buf[17], buf[18], buf[19], buf[20], buf[21], buf[22], buf[23], timestamp);
-		*/
+        ssp_infof("0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x, //0x%llx",
+                buf[16], buf[17], buf[18], buf[19], buf[20], buf[21], buf[22], buf[23], timestamp);
+*/
 		ssp_iio_push_buffers(data->indio_devs[SENSOR_TYPE_SCONTEXT], timestamp,
-				     buf, data->info[SENSOR_TYPE_SCONTEXT].report_data_len);
+		                     buf, data->info[SENSOR_TYPE_SCONTEXT].report_data_len);
 
 		start = end + 1;
 	}
@@ -341,74 +357,75 @@ void report_scontext_notice_data(struct ssp_data *data, char notice)
 	notice_buf[2] = notice;
 	if (notice == SCONTEXT_AP_STATUS_RESET) {
 		len = 4;
-		if (data->reset_info.reason == RESET_TYPE_KERNEL_SYSFS)
+		if (data->reset_type == RESET_TYPE_KERNEL_SYSFS) {
 			notice_buf[3] = RESET_REASON_SYSFS_REQUEST;
-		else if (data->reset_info.reason == RESET_TYPE_KERNEL_NO_EVENT)
+		} else if(data->reset_type == RESET_TYPE_KERNEL_NO_EVENT) {
 			notice_buf[3] = RESET_REASON_KERNEL_RESET;
-		else if (data->reset_info.reason == RESET_TYPE_KERNEL_COM_FAIL)
+		} else if(data->reset_type == RESET_TYPE_KERNEL_COM_FAIL) {
 			notice_buf[3] = RESET_REASON_KERNEL_RESET;
-		else if (data->reset_info.reason == RESET_TYPE_HUB_CRASHED)
+		} else if(data->reset_type == RESET_TYPE_HUB_CRASHED) {
 			notice_buf[3] = RESET_REASON_MCU_CRASHED;
-		else if (data->reset_info.reason == RESET_TYPE_HUB_NO_EVENT)
+		} else if(data->reset_type == RESET_TYPE_HUB_NO_EVENT) {
 			notice_buf[3] = RESET_REASON_HUB_REQUEST;
+		}
 	}
 
 	report_scontext_data(data, notice_buf, len);
 
-	if (notice == SCONTEXT_AP_STATUS_WAKEUP)
+	if (notice == SCONTEXT_AP_STATUS_WAKEUP) {
 		ssp_infof("wake up");
-	else if (notice == SCONTEXT_AP_STATUS_SLEEP)
+	} else if (notice == SCONTEXT_AP_STATUS_SLEEP) {
 		ssp_infof("sleep");
-	else if (notice == SCONTEXT_AP_STATUS_RESET)
+	} else if (notice == SCONTEXT_AP_STATUS_RESET) {
 		ssp_infof("reset");
-	else
+	} else {
 		ssp_errf("invalid notice(0x%x)", notice);
+	}
 }
 
-void report_sensorhub_data(struct ssp_data *data, char *buf)
+void report_sensorhub_data(struct ssp_data *data, char* buf)
 {
 	ssp_infof();
 	ssp_iio_push_buffers(data->indio_devs[SENSOR_TYPE_SENSORHUB], get_current_timestamp(),
-			     buf, data->info[SENSOR_TYPE_SENSORHUB].report_data_len);
+							buf, data->info[SENSOR_TYPE_SENSORHUB].report_data_len);
 }
 
 static void *init_indio_device(struct device *dev, struct ssp_data *data,
-			       const struct iio_info *info,
-			       const struct iio_chan_spec *channels,
-			       const char *device_name,
-			       const int bytes)
+                               const struct iio_info *info,
+                               const struct iio_chan_spec *channels,
+                               const char *device_name)
 {
 	struct iio_dev *indio_dev;
 	int ret = 0;
 
 	indio_dev = iio_device_alloc(0);
-	if (!indio_dev)
+	if (!indio_dev) {
 		goto err_alloc;
+	}
 
 	indio_dev->name = device_name;
 	indio_dev->dev.parent = dev;
 	indio_dev->info = info;
-#if (KERNEL_VERSION(4, 15, 0) <= LINUX_VERSION_CODE)
-	indio_dev->driver_module = THIS_MODULE;
-#endif
 	indio_dev->channels = channels;
 	indio_dev->num_channels = 1;
 	indio_dev->modes = INDIO_DIRECT_MODE;
 	indio_dev->currentmode = INDIO_DIRECT_MODE;
 
-	ret = ssp_iio_configure_ring(indio_dev, bytes);
-	if (ret)
+	ret = ssp_iio_configure_ring(indio_dev);
+	if (ret) {
 		goto err_config_ring;
+	}
 
 	ret = iio_device_register(indio_dev);
-	if (ret)
+	if (ret) {
 		goto err_register_device;
+	}
 
 	return indio_dev;
 
 err_register_device:
 	ssp_err("fail to register %s device", device_name);
-	ssp_iio_kfifo_free(indio_dev->buffer);
+	iio_kfifo_free(indio_dev->buffer);
 err_config_ring:
 	ssp_err("failed to configure %s buffer\n", indio_dev->name);
 	iio_device_unregister(indio_dev);
@@ -417,13 +434,8 @@ err_alloc:
 	return NULL;
 }
 
-#if (KERNEL_VERSION(4, 15, 0) > LINUX_VERSION_CODE)
 static const struct iio_info indio_info = {
-	.driver_module = THIS_MODULE,
 };
-#else
-static const struct iio_info indio_info;
-#endif
 
 int initialize_indio_dev(struct device *dev, struct ssp_data *data)
 {
@@ -431,15 +443,15 @@ int initialize_indio_dev(struct device *dev, struct ssp_data *data)
 	int type;
 	int realbits_size = 0;
 	int repeat_size = 0;
-	int bytes = 0;
 
 	for (type = 0; type < SENSOR_TYPE_MAX; type++) {
-		if (!data->info[type].enable || (data->info[type].report_data_len == 0))
+		if (!data->info[type].enable || (data->info[type].report_data_len == 0)) {
 			continue;
+		}
 
 		timestamp_len = sizeof(data->buf[type].timestamp);
-		bytes = (data->info[type].report_data_len + timestamp_len);
-		realbits_size = bytes * BITS_PER_BYTE;
+
+		realbits_size = (data->info[type].report_data_len+timestamp_len) * BITS_PER_BYTE;
 		repeat_size = 1;
 
 		while ((realbits_size / repeat_size > 255) && (realbits_size % repeat_size == 0))
@@ -457,9 +469,9 @@ int initialize_indio_dev(struct device *dev, struct ssp_data *data)
 		data->indio_channels[type].scan_type.repeat = repeat_size;
 
 		data->indio_devs[type]
-			= (struct iio_dev *)init_indio_device(dev, data,
-							      &indio_info, &data->indio_channels[type],
-							      data->info[type].name, bytes);
+		        = (struct iio_dev *)init_indio_device(dev, data,
+		                                              &indio_info, &data->indio_channels[type],
+		                                              data->info[type].name);
 
 		if (!data->indio_devs[type]) {
 			ssp_err("fail to init %s iio dev", data->info[type].name);
@@ -476,8 +488,9 @@ void remove_indio_dev(struct ssp_data *data)
 	int type;
 
 	for (type = SENSOR_TYPE_MAX - 1; type >= 0; type--) {
-		if (data->indio_devs[type])
+		if (data->indio_devs[type]) {
 			iio_device_unregister(data->indio_devs[type]);
+		}
 	}
 }
 

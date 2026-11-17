@@ -18,8 +18,6 @@
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/delay.h>
-#include <linux/timer.h>
-#include <linux/version.h>
 
 #include "ssp_data.h"
 #include "ssp_debug.h"
@@ -28,7 +26,6 @@
 #include "ssp_cmd_define.h"
 #include "ssp_comm.h"
 #include "ssp_sysfs.h"
-#include "ssp_sensorlist.h"
 
 #define SSP2AP_BYPASS_DATA	 0x37
 #define SSP2AP_LIBRARY_DATA	0x01
@@ -46,13 +43,14 @@
 #define SSP2AP_SYSTEM_INFO	 0x31
 #define SSP2AP_SENSOR_SPEC	 0x41
 
-enum hub_req_reset_type {
+typedef enum _hub_req_reset_type {
 	HUB_RESET_REQ_NO_EVENT = 0x1a,
-};
+} hub_req_reset_type;
+
 
 #define U64_US2NS 1000ULL
 
-#define SSP_TIMESTAMP_SYNC_TIMER_SEC     (10 * HZ)
+#define SSP_TIMESTAMP_SYNC_TIMER_SEC     (30 * HZ)
 
 /* fw */
 #define SSP_INVALID_REVISION	    99999
@@ -69,30 +67,18 @@ u64 get_current_timestamp(void)
 	return timestamp;
 }
 
-void get_tm(struct rtc_time *tm)
-{
-	struct timespec ts;
-
-	getnstimeofday(&ts);
-	rtc_time_to_tm(ts.tv_sec, tm);
-}
-
-void get_timestamp(struct ssp_data *data, char *dataframe, int *ptr_data, struct sensor_value *event, int type)
+void get_timestamp(struct ssp_data *data, char *dataframe,
+		   int *ptr_data, struct sensor_value *event, int type)
 {
 	u64 timestamp_ns = 0;
 	u64 current_timestamp = get_current_timestamp();
-
 	memset(&timestamp_ns, 0, 8);
 	memcpy(&timestamp_ns, dataframe + *ptr_data, 8);
-#ifdef CONFIG_SSP_ENG_DEBUG
-	ssp_conditional(data->debug_enable[SSP_LOG_EVENT_TIMESTAMP],
-			"ts (%d) %lld %lld %lld",
-			type, current_timestamp, timestamp_ns, current_timestamp - timestamp_ns);
-#endif
 
-	if (timestamp_ns > current_timestamp)
+	if (timestamp_ns > current_timestamp) {
+		//ssp_infof("future timestamp(%d) : last = %lld, cur = %lld", type, data->latest_timestamp[type], current_timestamp);
 		timestamp_ns = current_timestamp;
-
+	}
 	event->timestamp = timestamp_ns;
 	data->buf[type].timestamp = event->timestamp;
 	data->latest_timestamp[type] = current_timestamp;
@@ -100,7 +86,8 @@ void get_timestamp(struct ssp_data *data, char *dataframe, int *ptr_data, struct
 	*ptr_data += 8;
 }
 
-void get_sensordata(struct ssp_data *data, char *dataframe, int *ptr_data, int type, struct sensor_value *event)
+void get_sensordata(struct ssp_data *data, char *dataframe,
+		    int *ptr_data, int type, struct sensor_value *event)
 {
 	memcpy(event, dataframe + *ptr_data, data->info[type].get_data_len);
 	*ptr_data += data->info[type].get_data_len;
@@ -109,57 +96,54 @@ void get_sensordata(struct ssp_data *data, char *dataframe, int *ptr_data, int t
 
 void show_system_info(char *dataframe, int *idx)
 {
-	struct sensor_debug_info {
+	typedef struct _sensor_debug_info {
 		uint8_t uid;
 		uint8_t total_count;
 		uint8_t ext_client;
 		int32_t ext_sampling;
 		int32_t ext_report;
 		int32_t fastest_sampling;
-	};
+	} sensor_debug_info;
 
-	struct base_timestamp {
+	typedef struct _base_timestamp {
 		uint64_t kernel_base;
 		uint64_t hub_base;
-	};
+	} base_timestamp;
 
-	struct utc_time {
+	typedef struct _utc_time {
 		int8_t nHour;
 		int8_t nMinute;
 		int8_t nSecond;
 		int16_t nMilliSecond;
-	};
+	} utc_time;
 
-	struct system_debug_info {
+	typedef struct _system_debug_info {
 		int32_t version;
 		int32_t rate;
 		int8_t ap_state;
-		struct utc_time time;
-		struct base_timestamp timestamp;
-	};
+		utc_time time;
+		base_timestamp timestamp;
+	} system_debug_info;
 	//===================================================//
-	struct sensor_debug_info *info = 0;
-	struct system_debug_info *s_info = 0;
+	sensor_debug_info *info = 0;
+	system_debug_info *s_info = 0;
 	int i;
 	int count = *dataframe;
 
 	++dataframe;
-	*idx += (1 + sizeof(struct sensor_debug_info) * count + sizeof(struct system_debug_info));
+	*idx += (1 + sizeof(sensor_debug_info) * count + sizeof(system_debug_info));
 
 	ssp_info("==system info ===");
 	for (i = 0; i < count; ++i) {
-		info = (struct sensor_debug_info *)dataframe;
+		info = (sensor_debug_info *)dataframe;
 		ssp_info("id(%d), total(%d), external(%d), e_sampling(%d), e_report(%d), fastest(%d)",
-			 info->uid, info->total_count, info->ext_client, info->ext_sampling, info->ext_report,
-			 info->fastest_sampling);
-		dataframe += sizeof(struct sensor_debug_info);
+			 info->uid, info->total_count, info->ext_client, info->ext_sampling, info->ext_report, info->fastest_sampling);
+		dataframe += sizeof(sensor_debug_info);
 	}
 
-	s_info = (struct system_debug_info *)dataframe;
+	s_info = (system_debug_info *)dataframe;
 	ssp_info("version(%d), rate(%d), ap_state(%s), time(%d:%d:%d.%d), base_ts_k(%lld), base_ts_hub(%lld)",
-		 s_info->version, s_info->rate, s_info->ap_state == 0 ? "run" : "suspend", s_info->time.nHour,
-		 s_info->time.nMinute, s_info->time.nSecond, s_info->time.nMilliSecond, s_info->timestamp.kernel_base,
-		 s_info->timestamp.hub_base);
+		 s_info->version, s_info->rate, s_info->ap_state == 0 ? "run" : "suspend", s_info->time.nHour, s_info->time.nMinute, s_info->time.nSecond, s_info->time.nMilliSecond, s_info->timestamp.kernel_base, s_info->timestamp.hub_base);
 }
 
 void handle_sensor_spec(struct ssp_data *data, char *dataframe, int *idx)
@@ -174,6 +158,9 @@ void handle_sensor_spec(struct ssp_data *data, char *dataframe, int *idx)
 	if (size == 0)
 		return;
 
+	ssp_infof("prev size %d cur size %d", prev_size, size);
+	ssp_infof("count %d unit size %d", count, sizeof(struct sensor_spec_t));
+
 	data->sensor_spec = kzalloc(size + prev_size, GFP_KERNEL);
 	if (prev_sensor_spec != NULL) { // prev_size != 0
 		memcpy(data->sensor_spec, prev_sensor_spec, prev_size);
@@ -182,38 +169,36 @@ void handle_sensor_spec(struct ssp_data *data, char *dataframe, int *idx)
 	memcpy(data->sensor_spec + prev_size, dataframe, size);
 	data->sensor_spec_size = size + prev_size;
 
-	if (data->cnt_reset == 0) {
-		for (i = 0; i < count; ++i) {
-			spec = (struct sensor_spec_t *)dataframe;
-			dataframe += sizeof(struct sensor_spec_t);
+	for (i = 0; i < count; ++i) {
+		spec = (struct sensor_spec_t *)dataframe;
+		dataframe += sizeof(struct sensor_spec_t);
 
-			ssp_info("id(%d), name(%s), vendor(%d)", spec->uid, spec->name, spec->vendor);
-			if (spec->uid == SENSOR_TYPE_ACCELEROMETER) {
+		ssp_info("id(%d), name(%s), vendor(%d)", spec->uid, spec->name, spec->vendor);
+		if (spec->uid == SENSOR_TYPE_ACCELEROMETER) {
 #ifdef CONFIG_SENSORS_SSP_ACCELOMETER
-				select_accel_ops(data, spec->name);
-#endif
-			}
-#ifdef CONFIG_SENSORS_SSP_GYROSCOPE
-			else if (spec->uid == SENSOR_TYPE_GYROSCOPE)
-				select_gyro_ops(data, spec->name);
-#endif
-#ifdef CONFIG_SENSORS_SSP_MAGNETIC
-			else if (spec->uid == SENSOR_TYPE_GEOMAGNETIC_FIELD)
-				select_magnetic_ops(data, spec->name);
-#endif
-#ifdef CONFIG_SENSORS_SSP_BAROMETER
-			else if (spec->uid == SENSOR_TYPE_PRESSURE)
-				select_barometer_ops(data, spec->name);
-#endif
-#ifdef CONFIG_SENSORS_SSP_LIGHT
-			else if (spec->uid == SENSOR_TYPE_LIGHT)
-				select_light_ops(data, spec->name);
-#endif
-#ifdef CONFIG_SENSORS_SSP_PROXIMITY
-			else if (spec->uid == SENSOR_TYPE_PROXIMITY)
-				select_prox_ops(data, spec->name);
+			select_accel_ops(data, spec->name);
 #endif
 		}
+#ifdef CONFIG_SENSORS_SSP_GYROSCOPE
+		else if (spec->uid == SENSOR_TYPE_GYROSCOPE)
+			select_gyro_ops(data, spec->name);
+#endif
+#ifdef CONFIG_SENSORS_SSP_MAGNETIC
+		else if (spec->uid == SENSOR_TYPE_GEOMAGNETIC_FIELD)
+			select_magnetic_ops(data, spec->name);
+#endif
+#ifdef CONFIG_SENSORS_SSP_BAROMETER
+		else if (spec->uid == SENSOR_TYPE_PRESSURE)
+			select_barometer_ops(data, spec->name);
+#endif
+#ifdef CONFIG_SENSORS_SSP_LIGHT
+		else if (spec->uid == SENSOR_TYPE_LIGHT)
+			select_light_ops(data, spec->name);
+#endif
+#ifdef CONFIG_SENSORS_SSP_PROXIMITY
+		else if (spec->uid == SENSOR_TYPE_PROXIMITY)
+			select_prox_ops(data, spec->name);
+#endif
 	}
 }
 
@@ -230,10 +215,8 @@ int parse_dataframe(struct ssp_data *data, char *dataframe, int frame_len)
 		return SUCCESS;
 	}
 
-#ifdef CONFIG_SSP_ENG_DEBUG
-	if (data->debug_enable[SSP_LOG_DATA_PACKET])
-		print_dataframe(data, dataframe, frame_len);
-#endif
+	//print_dataframe(data, dataframe, frame_len);
+
 	memset(&event, 0, sizeof(event));
 
 	for (index = 0; index < frame_len && !parsing_error;) {
@@ -305,36 +288,48 @@ int parse_dataframe(struct ssp_data *data, char *dataframe, int frame_len)
 		break;
 #ifdef CONFIG_SENSORS_SSP_GYROSCOPE
 		case SSP2AP_GYRO_CAL: {
-			ssp_infof("Gyro caldata received from MCU");
-			memcpy(&data->gyrocal, dataframe + index, sizeof(data->gyrocal));
-			index += sizeof(data->gyrocal);
+			s16 caldata[3] = {0, };
+
+			ssp_infof("Gyro caldata received from MCU\n");
+			memcpy(caldata, dataframe + index, sizeof(caldata));
+
+			wake_lock(&data->ssp_wake_lock);
+			save_gyro_cal_data(data, caldata);
+			wake_unlock(&data->ssp_wake_lock);
+			index += sizeof(caldata);
 		}
 		break;
 #endif // CONFIG_SENSORS_SSP_GYROSCOPE
 #ifdef CONFIG_SENSORS_SSP_MAGNETIC
 		case SSP2AP_MAG_CAL: {
-			memcpy(&data->magcal, dataframe + index, sizeof(data->magcal));
-			data->new_magcal = true;
-			ssp_infof("Mag caldata received from MCU : %d %d %d", data->magcal.offset_x,
-				   data->magcal.offset_y, data->magcal.offset_z);
-			index += sizeof(data->magcal);
+#ifdef CONFIG_SENSORS_SSP_MAGNETIC_MMC5603
+			u8 caldata[16] = {0,};
+#else
+			u8 caldata[13] = {0,};
+#endif
+
+			ssp_infof("Mag caldata received from MCU(%d)\n", sizeof(caldata));
+			memcpy(caldata, dataframe + index, sizeof(caldata));
+
+			wake_lock(&data->ssp_wake_lock);
+			save_mag_cal_data(data, caldata);
+			wake_unlock(&data->ssp_wake_lock);
+			index += sizeof(caldata);
 		}
 		break;
 #endif
 #ifdef CONFIG_SENSORS_SSP_PROXIMITY
+#ifdef CONFIG_SENSROS_SSP_PROXIMITY_THRESH_CAL
 		case SSP2AP_PROX_THRESH: {
 			u16 thresh[2] = {0, };
-
 			memcpy(thresh, dataframe + index, sizeof(thresh));
 			data->prox_thresh[0] = thresh[0];
 			data->prox_thresh[1] = thresh[1];
-#if defined(CONFIG_SENSORS_SSP_PROXIMITY_STK3X6X) || defined(CONFIG_SENSORS_SSP_PROXIMITY_STK3A5X)
-			data->prox_thresh_mode = 3;
-#endif
 			index += sizeof(thresh);
 			ssp_infof("prox thresh received %u %u", data->prox_thresh[0], data->prox_thresh[1]);
 		}
 		break;
+#endif // CONFIG_SENSROS_SSP_PROXIMITY_THRESH_CAL
 #endif // CONFIG_SENSORS_SSP_PROXIMITY
 		case SSP2AP_SYSTEM_INFO:
 			show_system_info(dataframe + index, &index);
@@ -342,8 +337,8 @@ int parse_dataframe(struct ssp_data *data, char *dataframe, int frame_len)
 		case SSP2AP_SENSOR_SPEC:
 			handle_sensor_spec(data, dataframe + index, &index);
 			break;
-		default:
-			ssp_errf("0x%x cmd doesn't support", dataframe[index - 1]);
+		default :
+			ssp_errf("0x%x cmd doesn't support", dataframe[index-1]);
 			parsing_error = true;
 			break;
 		}
@@ -363,6 +358,7 @@ int get_sensor_scanning_info(struct ssp_data *data)
 	uint64_t result[3] = {0,};
 	char *buffer = NULL;
 	unsigned int buffer_length;
+
 	char sensor_scanning_state[SENSOR_TYPE_MAX + 1];
 
 	ret = ssp_send_command(data, CMD_GETVALUE, TYPE_MCU, SENSOR_SCAN_RESULT, 1000,
@@ -398,7 +394,8 @@ int get_firmware_rev(struct ssp_data *data)
 	char *buffer = NULL;
 	int buffer_length;
 
-	ret = ssp_send_command(data, CMD_GETVALUE, TYPE_MCU, VERSION_INFO, 1000, NULL, 0, &buffer, &buffer_length);
+	ret = ssp_send_command(data, CMD_GETVALUE, TYPE_MCU, VERSION_INFO, 1000, NULL,
+			       0, &buffer, &buffer_length);
 
 	if (ret != SUCCESS)
 		ssp_errf("transfer fail %d", ret);
@@ -419,31 +416,33 @@ int get_firmware_rev(struct ssp_data *data)
 int set_sensor_position(struct ssp_data *data)
 {
 	int ret[3] = {0,};
-
 	ssp_infof();
 
 #ifdef CONFIG_SENSORS_SSP_ACCELOMETER
-	ret[0] = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_ACCELEROMETER, SENSOR_AXIS, 0,
-				  (char *)&(data->accel_position), sizeof(data->accel_position), NULL, NULL);
+	ret[0] = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_ACCELEROMETER,
+				  SENSOR_AXIS, 0, (char *)&(data->accel_position), sizeof(data->accel_position),
+				  NULL, NULL);
 	ssp_infof("A : %u", data->accel_position);
 #endif
 
 #ifdef CONFIG_SENSORS_SSP_GYROSCOPE
-	ret[1] = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_GYROSCOPE, SENSOR_AXIS, 0,
-				  (char *)&(data->gyro_position), sizeof(data->gyro_position), NULL, NULL);
+	ret[1] = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_GYROSCOPE,
+				  SENSOR_AXIS, 0, (char *)&(data->gyro_position), sizeof(data->gyro_position),
+				  NULL, NULL);
 
 	ssp_infof("G : %u", data->gyro_position);
 #endif
 
 #ifdef CONFIG_SENSORS_SSP_MAGNETIC
-	ret[2] = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_GEOMAGNETIC_FIELD, SENSOR_AXIS, 0,
-				  (char *)&(data->mag_position), sizeof(data->mag_position), NULL, NULL);
+	ret[2] = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_GEOMAGNETIC_FIELD,
+				  SENSOR_AXIS, 0, (char *)&(data->mag_position), sizeof(data->mag_position),
+				  NULL, NULL);
 
 	ssp_infof("M : %u", data->mag_position);
 #endif
 
 	if ((ret[0] & ret[1] & ret[2]) != 0) {
-		ssp_errf("fail %d %d %d", ret[0], ret[1], ret[2]);
+		ssp_errf("fail to set_sensor_position %d %d %d", ret[0], ret[1], ret[2]);
 		return ERROR;
 	}
 
@@ -452,7 +451,7 @@ int set_sensor_position(struct ssp_data *data)
 
 #ifdef CONFIG_SENSORS_SSP_PROXIMITY
 #ifdef CONFIG_SENSROS_SSP_PROXIMITY_THRESH_CAL
-int set_proximity_threshold_addval(struct ssp_data *data)
+void set_proximity_threshold_addval(struct ssp_data *data)
 {
 	int ret = 0;
 	u16 prox_th_addval[PROX_THRESH_SIZE + 1] = {0, };
@@ -460,125 +459,27 @@ int set_proximity_threshold_addval(struct ssp_data *data)
 	if (!(data->sensor_probe_state & (1ULL << SENSOR_TYPE_PROXIMITY))) {
 		ssp_infof("Skip this function!, proximity sensor is not connected(0x%llx)",
 			  data->sensor_probe_state);
-		return ret;
+		return;
 	}
 
 	memcpy(prox_th_addval, data->prox_thresh_addval, sizeof(prox_th_addval));
 
-	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_PROXIMITY, PROXIMITY_ADDVAL, 0, (char *)prox_th_addval,
-			       sizeof(prox_th_addval), NULL, NULL);
+	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_PROXIMITY,
+			       PROXIMITY_ADDVAL, 0, (char *)prox_th_addval, sizeof(prox_th_addval), NULL, NULL);
 
 	if (ret != SUCCESS) {
 		ssp_err("SENSOR_PROXTHRESHOLD CMD fail %d", ret);
-		return ret;
+		return;
 	}
 
-	ssp_info("Proximity Threshold Additional Value(%d) - %u, %u", sizeof(prox_th_addval),
-		 data->prox_thresh_addval[PROX_THRESH_HIGH], data->prox_thresh_addval[PROX_THRESH_LOW]);
+	ssp_info("Proximity Threshold Additional Value(%d) - %u, %u", sizeof(prox_th_addval), data->prox_thresh_addval[PROX_THRESH_HIGH],
+		 data->prox_thresh_addval[PROX_THRESH_LOW]);
 
-	return ret;
-
-}
-#if defined(CONFIG_SENSORS_SSP_PROXIMITY_STK3X6X) || defined(CONFIG_SENSORS_SSP_PROXIMITY_STK3A5X)
-#define PROX_CALIBRATION_FILE_PATH      "/efs/FactoryApp/prox_cal_data"
-#define PROX_CALIBRATION_FILE_MODE2_PATH	"/efs/FactoryApp/prox_cal_data2"
-int save_prox_cal_threshold_data(struct ssp_data *data)
-{
-	int ret = 0;
-	struct file *cal_filp = NULL;
-	mm_segment_t old_fs;
-
-	ssp_infof("mode %d thresh %d, %d ", data->prox_cal_mode, data->prox_thresh[0], data->prox_thresh[1]);
-
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-
-	if (data->prox_cal_mode == 1) {
-		cal_filp = filp_open(PROX_CALIBRATION_FILE_PATH,
-				     O_CREAT | O_TRUNC | O_WRONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
-	} else if (data->prox_cal_mode == 2) {
-		cal_filp = filp_open(PROX_CALIBRATION_FILE_MODE2_PATH,
-				     O_CREAT | O_TRUNC | O_WRONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
-	} else {
-		set_fs(old_fs);
-		return -EINVAL;
-	}
-
-	data->prox_cal_mode = 0;
-	if (IS_ERR(cal_filp)) {
-		ssp_errf("can't open calibration file");
-		set_fs(old_fs);
-		ret = PTR_ERR(cal_filp);
-		return -EIO;
-	}
-
-	ret = vfs_write(cal_filp, (char *)&data->prox_thresh, sizeof(data->prox_thresh), &cal_filp->f_pos);
-	if (ret != sizeof(data->prox_thresh)) {
-		ssp_errf("can't write prox cal to file");
-		ret = -EIO;
-	}
-
-	filp_close(cal_filp, current->files);
-	set_fs(old_fs);
-	return ret;
-}
-
-int proximity_open_calibration(struct ssp_data *data)
-{
-	int ret = 0;
-	mm_segment_t old_fs;
-	struct file *cal_filp = NULL;
-
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-
-	cal_filp = filp_open(PROX_CALIBRATION_FILE_PATH, O_RDONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
-	if (IS_ERR(cal_filp)) {
-		cal_filp = filp_open(PROX_CALIBRATION_FILE_MODE2_PATH, O_RDONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
-
-		data->prox_thresh_mode = 2;
-		if (IS_ERR(cal_filp)) {
-			set_fs(old_fs);
-			ret = PTR_ERR(cal_filp);
-			data->prox_thresh_mode = 0;
-			ssp_errf("can't proximity open calibration file %d", ret);
-			return ret;
-		}
-	} else
-		data->prox_thresh_mode = 1;
-
-	ret = vfs_read(cal_filp, (char *)&data->prox_thresh, sizeof(data->prox_thresh), &cal_filp->f_pos);
-	if (ret != sizeof(data->prox_thresh))
-		ret = -EIO;
-
-	filp_close(cal_filp, current->files);
-	set_fs(old_fs);
-
-	ssp_info("proximity_open_calibration mode %d, thresh %d, %d", data->prox_thresh_mode,
-		 data->prox_thresh[0], data->prox_thresh[1]);
-	return ret;
-}
-#endif
-void proximity_calibration_off(struct ssp_data *data)
-{
-	ssp_infof("");
-	disable_legacy_sensor(data, SENSOR_TYPE_PROXIMITY_CALIBRATION);
-}
-
-void do_proximity_calibration(struct ssp_data *data)
-{
-	ssp_infof("");
-#if defined(CONFIG_SENSORS_SSP_PROXIMITY_STK3X3X)
-	set_delay_legacy_sensor(data, SENSOR_TYPE_PROXIMITY_CALIBRATION, 10, 0);
-#else
-	set_delay_legacy_sensor(data, SENSOR_TYPE_PROXIMITY_CALIBRATION, 20, 0);
-#endif
-	enable_legacy_sensor(data, SENSOR_TYPE_PROXIMITY_CALIBRATION);
 }
 #endif
 
 #ifdef CONFIG_SENSORS_SSP_PROXIMITY_MODIFY_SETTINGS
-#define PROX_SETTINGS_FILE_PATH     "/efs/FactoryApp/prox_settings"
+#define PROX_SETTINGS_FILE_PATH	 "/efs/FactoryApp/prox_settings"
 int save_proximity_setting_mode(struct ssp_data *data)
 {
 	struct file *filp = NULL;
@@ -587,12 +488,13 @@ int save_proximity_setting_mode(struct ssp_data *data)
 	char buf[3] = "";
 	int buf_len = 0;
 
-	buf_len = snprintf(buf, sizeof(buf), "%d", data->prox_setting_mode);
+	buf_len = snprintf(buf, PAGE_SIZE, "%d", data->prox_setting_mode);
 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 
-	filp = filp_open(PROX_SETTINGS_FILE_PATH, O_CREAT | O_TRUNC | O_RDWR | O_SYNC, 0666);
+	filp = filp_open(PROX_SETTINGS_FILE_PATH,
+			 O_CREAT | O_TRUNC | O_RDWR | O_SYNC, 0666);
 
 	if (filp == NULL) {
 		ssp_infof("filp is NULL");
@@ -662,139 +564,46 @@ int open_proximity_setting_mode(struct ssp_data *data)
 	return ret;
 }
 
-int set_proximity_setting_mode(struct ssp_data *data)
+void set_proximity_setting_mode(struct ssp_data *data)
 {
 	int ret = 0;
 	u8 mode = data->prox_setting_mode;
 
 	if (!(data->sensor_probe_state & (1ULL << SENSOR_TYPE_PROXIMITY))) {
-		ssp_infof("Skip this function!, proximity sensor is not connected(0x%llx)", data->sensor_probe_state);
-		return ret;
+		ssp_infof("Skip this function!, proximity sensor is not connected(0x%llx)",
+			  data->sensor_probe_state);
+		return;
 	}
 
-	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_PROXIMITY, PROXIMITY_SETTING_MODE, 0, (char *)&mode,
-			       sizeof(mode), NULL, NULL);
+	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_PROXIMITY,
+			       PROXIMITY_SETTING_MODE, 0, (char *)&mode, sizeof(mode), NULL, NULL);
 
 	if (ret != SUCCESS) {
 		ssp_err("PROXIMITY_SETTING_MODE CMD fail %d", ret);
-		return ret;
+		return;
 	}
 
 	ssp_infof("%d", mode);
 
-	return ret;
 }
 #endif
 
-#ifdef CONFIG_SENSORS_SSP_PROXIMITY_FACTORY_CROSSTALK_CAL
-#define PROX_CALIBRATION_FILE_PATH      "/efs/FactoryApp/prox_cal_data"
-
-int save_prox_cal_threshold_data(struct ssp_data *data)
+void proximity_calibration_off(struct ssp_data *data)
 {
-	int ret = 0;
-	struct file *cal_filp = NULL;
-	mm_segment_t old_fs;
+	ssp_infof("");
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-
-	cal_filp = filp_open(PROX_CALIBRATION_FILE_PATH, O_CREAT | O_TRUNC | O_WRONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
-
-	if (IS_ERR(cal_filp)) {
-		ssp_errf("can't open calibration file");
-		set_fs(old_fs);
-		ret = PTR_ERR(cal_filp);
-		return -EIO;
-	}
-
-	ret = vfs_write(cal_filp, (char *)&data->prox_thresh, sizeof(data->prox_thresh), &cal_filp->f_pos);
-	if (ret != sizeof(data->prox_thresh)) {
-		ssp_errf("can't write prox cal to file");
-		ret = -EIO;
-	}
-
-	filp_close(cal_filp, current->files);
-	set_fs(old_fs);
-	return ret;
+	disable_legacy_sensor(data, SENSOR_TYPE_PROXIMITY_CALIBRATION);
 }
 
-int proximity_open_calibration(struct ssp_data *data)
+void do_proximity_calibration(struct ssp_data *data)
 {
-	int ret = 0;
-	mm_segment_t old_fs;
-	struct file *cal_filp = NULL;
+	ssp_infof("");
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-
-	cal_filp = filp_open(PROX_CALIBRATION_FILE_PATH, O_RDONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
-	if (IS_ERR(cal_filp)) {
-		set_fs(old_fs);
-		ret = PTR_ERR(cal_filp);
-		ssp_errf("can't proximity open calibration file %d", ret);
-		return ret;
-	}
-
-	ret = vfs_read(cal_filp, (char *)&data->prox_thresh, sizeof(data->prox_thresh), &cal_filp->f_pos);
-	if (ret != sizeof(data->prox_thresh))
-		ret = -EIO;
-
-	filp_close(cal_filp, current->files);
-	set_fs(old_fs);
-
-	ssp_infof("thresh %d, %d", data->prox_thresh[0], data->prox_thresh[1]);
-	return ret;
+	set_delay_legacy_sensor(data, SENSOR_TYPE_PROXIMITY_CALIBRATION, 10, 0);
+	enable_legacy_sensor(data, SENSOR_TYPE_PROXIMITY_CALIBRATION);
 }
-#endif
 
-#if defined(CONFIG_SENSORS_SSP_PROXIMITY_STK3X6X) || defined(CONFIG_SENSORS_SSP_PROXIMITY_STK3A5X)
-#define BATTERY_TEMP_PATH  "/sys/class/power_supply/battery/temp"
-#define TEMPERATURE_THRESH      50
-#define COMPENSATION_VALUE      40
-int get_proximity_thresh_temperature_compensation(struct ssp_data *data)
-{
-	int ret = 0;
-	mm_segment_t old_fs;
-	struct file *temperature_filp = NULL;
-	char temp_str[10] = {0,};
-	int temp_value = 0;
-
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-
-	temperature_filp = filp_open(BATTERY_TEMP_PATH, O_RDONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
-	if (IS_ERR(temperature_filp)) {
-		temperature_filp = filp_open(BATTERY_TEMP_PATH, O_RDONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
-
-		if (IS_ERR(temperature_filp)) {
-			set_fs(old_fs);
-			ssp_errf("can't proximity open temperature file %d", PTR_ERR(temperature_filp));
-			return 0;
-		}
-	}
-
-	ret = vfs_read(temperature_filp, (char *)&temp_str, sizeof(temp_str), &temperature_filp->f_pos);
-	if (ret != sizeof(temp_value))
-		ret = 0;
-
-
-	ret = kstrtos32(temp_str, 10, &temp_value);
-	if (ret < 0) {
-		ssp_errf("kstrtou32 failed(%d)", ret);
-		ret = 0;
-	} else  if (temp_value < TEMPERATURE_THRESH)
-		ret = COMPENSATION_VALUE;
-
-	ssp_infof("%s temp value %d compensation %d", temp_str, temp_value, ret);
-
-	filp_close(temperature_filp, current->files);
-	set_fs(old_fs);
-
-	return ret;
-}
-#endif
-
-int set_proximity_threshold(struct ssp_data *data)
+void set_proximity_threshold(struct ssp_data *data)
 {
 	int ret = 0;
 #if defined(CONFIG_SENSORS_SSP_PROXIMITY_AUTO_CAL_TMD3725)
@@ -804,96 +613,88 @@ int set_proximity_threshold(struct ssp_data *data)
 #endif
 
 	if (!(data->sensor_probe_state & (1ULL << SENSOR_TYPE_PROXIMITY))) {
-		ssp_infof("Skip this function!, proximity sensor is not connected(0x%llx)", data->sensor_probe_state);
-		return ret;
+		ssp_infof("Skip this function!, proximity sensor is not connected(0x%llx)",
+			  data->sensor_probe_state);
+		return;
 	}
 
 	memcpy(prox_th, data->prox_thresh, sizeof(prox_th));
 
-#if defined(CONFIG_SENSORS_SSP_PROXIMITY_STK3X6X) || defined(CONFIG_SENSORS_SSP_PROXIMITY_STK3A5X)
-	{
-		int compensation = get_proximity_thresh_temperature_compensation(data);
-
-		prox_th[0] += compensation;
-		prox_th[1] += compensation;
-	}
-#endif
-
-	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_PROXIMITY, PROXIMITY_THRESHOLD, 0, (char *)prox_th,
-			       sizeof(prox_th), NULL, NULL);
+	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_PROXIMITY,
+			       PROXIMITY_THRESHOLD, 0, (char *)prox_th, sizeof(prox_th), NULL, NULL);
 
 	if (ret != SUCCESS) {
 		ssp_err("SENSOR_PROXTHRESHOLD CMD fail %d", ret);
-		return ret;
+		return;
 	}
 #if defined(CONFIG_SENSORS_SSP_PROXIMITY_AUTO_CAL_TMD3725)
 	ssp_info("Proximity Threshold - %u, %u, %u, %u", data->prox_thresh[PROX_THRESH_HIGH],
 		 data->prox_thresh[PROX_THRESH_LOW],
 		 data->prox_thresh[PROX_THRESH_DETECT_HIGH], data->prox_thresh[PROX_THRESH_DETECT_LOW]);
-#elif defined(CONFIG_SENSROS_SSP_PROXIMITY_THRESH_CAL)
-	ssp_info("Proximity Threshold[%d] -  %u, %u", data->prox_thresh_mode,
-		 data->prox_thresh[PROX_THRESH_HIGH], data->prox_thresh[PROX_THRESH_LOW]);
 #else
-	ssp_info("Proximity Threshold - %u, %u",
-		 data->prox_thresh[PROX_THRESH_HIGH], data->prox_thresh[PROX_THRESH_LOW]);
+	ssp_info("Proximity Threshold - %u, %u", data->prox_thresh[PROX_THRESH_HIGH],
+		 data->prox_thresh[PROX_THRESH_LOW]);
 #endif
-	return ret;
 }
 #endif
 
 #ifdef CONFIG_SENSORS_SSP_LIGHT
-int set_light_coef(struct ssp_data *data)
+void set_light_coef(struct ssp_data *data)
 {
 	int ret = 0;
 
 	if (!(data->sensor_probe_state & (1ULL << SENSOR_TYPE_LIGHT))) {
-		ssp_infof("Skip this function!!!, light sensor is not connected(0x%llx)", data->sensor_probe_state);
-		return ret;
+		pr_info("[SSP]: %s - Skip this function!!!,"\
+			"light sensor is not connected(0x%llx)\n",
+			__func__, data->sensor_probe_state);
+		return;
 	}
 
-	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_LIGHT, LIGHT_COEF, 0, (char *)data->light_coef,
-			       sizeof(data->light_coef), NULL, NULL);
+	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_LIGHT, LIGHT_COEF, 0,
+			       (char *)data->light_coef, sizeof(data->light_coef), NULL, NULL);
 
 	if (ret != SUCCESS) {
-		ssp_infof("MSG2SSP_AP_SET_LIGHT_COEF CMD fail %d", ret);
-		return ret;
+		pr_err("[SSP]: %s - MSG2SSP_AP_SET_LIGHT_COEF CMD fail %d\n",
+		       __func__, ret);
+		return;
 	}
 
-	ssp_infof("%d %d %d %d %d %d %d", data->light_coef[0], data->light_coef[1], data->light_coef[2],
-		  data->light_coef[3], data->light_coef[4], data->light_coef[5], data->light_coef[6]);
-	return ret;
+	pr_info("[SSP]: %s - %d %d %d %d %d %d %d\n", __func__,
+		data->light_coef[0], data->light_coef[1], data->light_coef[2],
+		data->light_coef[3], data->light_coef[4], data->light_coef[5],
+		data->light_coef[6]);
 }
 
-int set_light_brightness(struct ssp_data *data)
+void set_light_brightness(struct ssp_data *data)
 {
 	int ret = 0;
-
 	if (!(data->sensor_probe_state & (1ULL << SENSOR_TYPE_LIGHT))) {
-		ssp_infof("Skip this function!!!, light sensor is not connected(0x%llx)", data->sensor_probe_state);
-		return ret;
+		ssp_infof("Skip this function!!!,"\
+			  "light sensor is not connected(0x%llx)\n",
+			  data->sensor_probe_state);
+		return;
 	}
 
 	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_LIGHT, LIGHT_BRIGHTNESS, 0,
 			       (char *)&data->brightness, sizeof(data->brightness), NULL, NULL);
 
 	if (ret != SUCCESS) {
-		ssp_errf("CMD fail %d", ret);
-		return ret;
+		ssp_errf("CMD fail %d\n", ret);
+		return;
 	}
 
-	ssp_infof("%d", data->brightness);
-
-	return ret;
+	ssp_infof("%d \n", data->brightness);
 }
 
-int set_light_ab_camera_hysteresis(struct ssp_data *data)
+void set_light_ab_camera_hysteresis(struct ssp_data *data)
 {
 	int ret = 0;
 	int buf[4];
-
 	if (!(data->sensor_probe_state & (1ULL << SENSOR_TYPE_LIGHT_AUTOBRIGHTNESS))) {
-		ssp_infof("Skip this function!!!, light sensor is not connected(0x%llx)", data->sensor_probe_state);
-		return ret;
+		ssp_infof("Skip this function!!!,"\
+			  "light sensor is not connected(0x%llx)\n",
+			  data->sensor_probe_state);
+		return;
 	}
 
 	memcpy(buf, data->camera_lux_hysteresis, sizeof(data->camera_lux_hysteresis));
@@ -903,28 +704,13 @@ int set_light_ab_camera_hysteresis(struct ssp_data *data)
 			       (char *)buf, sizeof(buf), NULL, NULL);
 
 	if (ret != SUCCESS) {
-		ssp_errf("CMD fail %d", ret);
-		return ret;
+		ssp_errf("CMD fail %d\n", ret);
+		return;
 	}
 
-	ssp_infof("%d %d %d %d", buf[0], buf[1], buf[2], buf[3]);
-
-	return ret;
+	ssp_infof("%d %d %d %d\n", buf[0], buf[1], buf[2], buf[3]);
 }
-#ifdef CONFIG_SENSORS_SSP_LIGHT_JPNCONCEPT
-int set_light_region(struct ssp_data *data)
-{
-	char region = 0;
-	int ret = 0;
 
-	ssp_infof();
-	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_LIGHT, LIGHT_PRJ_REGION, 0, (char *)&region,
-			     sizeof(region), NULL, 0);
-	if (ret < 0)
-		ssp_errf("send light region fail");
-	return ret;
-}
-#endif
 #endif
 
 #ifdef CONFIG_SENSORS_SSP_GYROSCOPE
@@ -933,13 +719,17 @@ int set_light_region(struct ssp_data *data)
 int gyro_open_calibration(struct ssp_data *data)
 {
 	int ret = 0;
+#ifdef CONFIG_SENSORS_SSP_GYROFILE_FOR_MAG
+	ssp_infof("gyrofile for mag");
+#else
 	mm_segment_t old_fs;
 	struct file *cal_filp = NULL;
 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 
-	cal_filp = filp_open(GYRO_CALIBRATION_FILE_PATH, O_RDONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
+	cal_filp = filp_open(GYRO_CALIBRATION_FILE_PATH,
+			     O_RDONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
 	if (IS_ERR(cal_filp)) {
 		set_fs(old_fs);
 		ret = PTR_ERR(cal_filp);
@@ -948,7 +738,7 @@ int gyro_open_calibration(struct ssp_data *data)
 		data->gyrocal.y = 0;
 		data->gyrocal.z = 0;
 
-		ssp_errf("Can't open calibration file %d", ret);
+		pr_err("[SSP]: %s - Can't open calibration file %d\n", __func__, ret);
 		return ret;
 	}
 
@@ -959,13 +749,18 @@ int gyro_open_calibration(struct ssp_data *data)
 	filp_close(cal_filp, current->files);
 	set_fs(old_fs);
 
-	ssp_info("open gyro calibration %d, %d, %d", data->gyrocal.x, data->gyrocal.y, data->gyrocal.z);
+	ssp_info("open gyro calibration %d, %d, %d",
+		 data->gyrocal.x, data->gyrocal.y, data->gyrocal.z);
+#endif
 	return ret;
 }
 
 int save_gyro_cal_data(struct ssp_data *data, s16 *cal_data)
 {
 	int ret = 0;
+#ifdef CONFIG_SENSORS_SSP_GYROFILE_FOR_MAG
+	ssp_infof("gyrofile for mag");
+#else
 	struct file *cal_filp = NULL;
 	mm_segment_t old_fs;
 
@@ -973,14 +768,17 @@ int save_gyro_cal_data(struct ssp_data *data, s16 *cal_data)
 	data->gyrocal.y = cal_data[1];
 	data->gyrocal.z = cal_data[2];
 
-	ssp_info("do gyro calibrate %d, %d, %d", data->gyrocal.x, data->gyrocal.y, data->gyrocal.z);
+	ssp_info("do gyro calibrate %d, %d, %d",
+		 data->gyrocal.x, data->gyrocal.y, data->gyrocal.z);
 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 
-	cal_filp = filp_open(GYRO_CALIBRATION_FILE_PATH, O_CREAT | O_WRONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
+	cal_filp = filp_open(GYRO_CALIBRATION_FILE_PATH,
+			     O_CREAT | O_TRUNC | O_WRONLY | O_NOFOLLOW |
+			     O_NONBLOCK, 0660);
 	if (IS_ERR(cal_filp)) {
-		ssp_errf("Can't open calibration file");
+		pr_err("[SSP]: %s - Can't open calibration file\n", __func__);
 		set_fs(old_fs);
 		ret = PTR_ERR(cal_filp);
 		return -EIO;
@@ -988,22 +786,29 @@ int save_gyro_cal_data(struct ssp_data *data, s16 *cal_data)
 
 	ret = vfs_write(cal_filp, (char *)&data->gyrocal, sizeof(data->gyrocal), &cal_filp->f_pos);
 	if (ret != sizeof(data->gyrocal)) {
-		ssp_errf("Can't write gyro cal to file");
+		pr_err("[SSP]: %s - Can't write gyro cal to file\n", __func__);
 		ret = -EIO;
 	}
 
 	filp_close(cal_filp, current->files);
 	set_fs(old_fs);
+#endif
+
 	return ret;
 }
 
 int set_gyro_cal(struct ssp_data *data)
 {
 	int ret = 0;
+#ifdef CONFIG_SENSORS_SSP_GYROFILE_FOR_MAG
+	ssp_infof("gyrofile for mag");
+#else
 	s16 gyro_cal[3] = {0, };
 
 	if (!(data->sensor_probe_state & (1ULL << SENSOR_TYPE_GYROSCOPE))) {
-		ssp_infof("Skip this function!!! gyro sensor is not connected(0x%llx)", data->sensor_probe_state);
+		pr_info("[SSP]: %s - Skip this function!!!"\
+			", gyro sensor is not connected(0x%llx)\n",
+			__func__, data->sensor_probe_state);
 		return ret;
 	}
 
@@ -1011,16 +816,21 @@ int set_gyro_cal(struct ssp_data *data)
 	gyro_cal[1] = data->gyrocal.y;
 	gyro_cal[2] = data->gyrocal.z;
 
-	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_GYROSCOPE, CAL_DATA, 0, (char *)gyro_cal,
-			       6 * sizeof(char), NULL, NULL);
+	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_GYROSCOPE, CAL_DATA, 0,
+			       (char *)gyro_cal, 6 * sizeof(char), NULL, NULL);
 
 	if (ret != SUCCESS) {
 		ssp_errf("ssp_send_command Fail %d", ret);
 		goto exit;
 	}
 
-	ssp_info("Set gyro cal data %d, %d, %d", data->gyrocal.x, data->gyrocal.y, data->gyrocal.z);
+	pr_info("[SSP] Set temp gyro cal data %d, %d, %d\n",
+		gyro_cal[0], gyro_cal[1], gyro_cal[2]);
+
+	pr_info("[SSP] Set gyro cal data %d, %d, %d\n",
+		data->gyrocal.x, data->gyrocal.y, data->gyrocal.z);
 exit:
+#endif
 	return ret;
 }
 #endif
@@ -1048,16 +858,18 @@ int accel_open_calibration(struct ssp_data *data)
 		return ret;
 	}
 
-	ret = vfs_read(cal_filp, (char *)&data->accelcal, sizeof(data->accelcal), &cal_filp->f_pos);
-	if (ret != sizeof(data->accelcal))
+	ret = vfs_read(cal_filp, (char *)&data->accelcal, 3 * sizeof(int), &cal_filp->f_pos);
+	if (ret != 3 * sizeof(int))
 		ret = -EIO;
 
 	filp_close(cal_filp, current->files);
 	set_fs(old_fs);
 
-	ssp_infof("%d, %d, %d", data->accelcal.x, data->accelcal.y, data->accelcal.z);
+	ssp_infof("open accel calibration %d, %d, %d\n",
+		  data->accelcal.x, data->accelcal.y, data->accelcal.z);
 
-	if ((data->accelcal.x == 0) && (data->accelcal.y == 0) && (data->accelcal.z == 0))
+	if ((data->accelcal.x == 0) && (data->accelcal.y == 0)
+	    && (data->accelcal.z == 0))
 		return ERROR;
 
 	return ret;
@@ -1069,7 +881,9 @@ int set_accel_cal(struct ssp_data *data)
 	s16 accel_cal[3] = {0, };
 
 	if (!(data->sensor_probe_state & (1ULL << SENSOR_TYPE_ACCELEROMETER))) {
-		ssp_info("Skip this function!!! accel sensor is not connected(0x%llx)", data->sensor_probe_state);
+		pr_info("[SSP]: %s - Skip this function!!!"\
+			", accel sensor is not connected(0x%llx)\n",
+			__func__, data->sensor_probe_state);
 		return ret;
 	}
 
@@ -1077,15 +891,17 @@ int set_accel_cal(struct ssp_data *data)
 	accel_cal[1] = data->accelcal.y;
 	accel_cal[2] = data->accelcal.z;
 
-	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_ACCELEROMETER, CAL_DATA, 0, (char *)accel_cal,
-			       6 * sizeof(char), NULL, NULL);
+	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_ACCELEROMETER, CAL_DATA,
+			       0, (char *)accel_cal, 6 * sizeof(char), NULL, NULL);
 
 	if (ret != SUCCESS)
 		ssp_errf("ssp_send_command Fail %d", ret);
-	ssp_infof("%d, %d, %d", data->accelcal.x, data->accelcal.y, data->accelcal.z);
+	pr_info("[SSP] Set accel cal data %d, %d, %d\n",
+		data->accelcal.x, data->accelcal.y, data->accelcal.z);
 
 	return ret;
 }
+
 
 #define ORIENTATION_CMD_MODE	128
 int set_device_orientation_mode(struct ssp_data *data)
@@ -1150,13 +966,15 @@ int pressure_open_calibration(struct ssp_data *data)
 	if (IS_ERR(cal_filp)) {
 		ret = PTR_ERR(cal_filp);
 		if (ret != -ENOENT)
-			ssp_errf("Can't open calibration file(%d)", ret);
+			pr_err("[SSP]: %s - Can't open calibration file(%d)\n",
+			       __func__, ret);
 		set_fs(old_fs);
 		return ret;
 	}
 	ret = vfs_read(cal_filp, chBuf, 10 * sizeof(char), &cal_filp->f_pos);
 	if (ret < 0) {
-		ssp_errf("Can't read the cal data from file (%d)", ret);
+		pr_err("[SSP]: %s - Can't read the cal data from file (%d)\n",
+		       __func__, ret);
 		filp_close(cal_filp, current->files);
 		set_fs(old_fs);
 		return ret;
@@ -1166,92 +984,110 @@ int pressure_open_calibration(struct ssp_data *data)
 
 	ret = kstrtoint(chBuf, 10, &data->buf[SENSOR_TYPE_PRESSURE].pressure_cal);
 	if (ret < 0) {
-		ssp_errf("kstrtoint failed. %d", ret);
+		pr_err("[SSP]: %s - kstrtoint failed. %d", __func__, ret);
 		return ret;
 	}
 
-	ssp_infof("%d", data->buf[SENSOR_TYPE_PRESSURE].pressure_cal);
+	ssp_info("open barometer calibration %d",
+		 data->buf[SENSOR_TYPE_PRESSURE].pressure_cal);
 
 	return ret;
 }
 #endif
 
 #ifdef CONFIG_SENSORS_SSP_MAGNETIC
-#if defined(CONFIG_SENSORS_SSP_MAGNETIC_MMC5603)
-#define MAG_CALIBRATION_FILE_PATH	"/efs/FactoryApp/gyro_cal_data"
-#define MAG_CALIBRATION_DATA_OFFSET	sizeof(data->gyrocal)
+#ifdef CONFIG_SENSORS_SSP_GYROFILE_FOR_MAG
+#define MAG_CALIBRATION_FILE_PATH	   "/efs/FactoryApp/gyro_cal_data"
 #else
-#define MAG_CALIBRATION_FILE_PATH	"/efs/FactoryApp/mag_cal_data"
-#define MAG_CALIBRATION_DATA_OFFSET	0
+#define MAG_CALIBRATION_FILE_PATH	   "/efs/FactoryApp/mag_cal_data"
 #endif
 int set_pdc_matrix(struct ssp_data *data)
 {
 	int ret = 0;
 
 	if (!(data->sensor_probe_state & 1ULL << SENSOR_TYPE_GEOMAGNETIC_FIELD)) {
-		ssp_infof("Skip this function!!! magnetic sensor is not connected(0x%llx)\n", data->sensor_probe_state);
+		pr_info("[SSP] %s - Skip this function!!!"\
+			", magnetic sensor is not connected(0x%llx)\n",
+			__func__, data->sensor_probe_state);
 		return ret;
 	}
 
-	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_GEOMAGNETIC_FIELD, MAGNETIC_STATIC_MATRIX, 0,
-			       &data->pdc_matrix[0], sizeof(data->pdc_matrix), NULL, NULL);
+	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_GEOMAGNETIC_FIELD,
+			       MAGNETIC_STATIC_MATRIX, 0, &data->pdc_matrix[0], sizeof(data->pdc_matrix), NULL,
+			       NULL);
 
 	if (ret != SUCCESS) {
 		ssp_errf("ssp_send_command Fail %d", ret);
 		goto exit;
 	}
 
-	ssp_infof("");
+	pr_info("[SSP] %s: finished\n", __func__);
 
 exit:
 	return ret;
 }
 
+#ifdef CONFIG_SENSORS_SSP_MAGNETIC_MMC5603
 int mag_open_calibration(struct ssp_data *data)
 {
 	int ret = 0;
 	mm_segment_t old_fs;
 	struct file *cal_filp = NULL;
+	char buffer[16] = {0,};
 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 
-	cal_filp = filp_open(MAG_CALIBRATION_FILE_PATH, O_RDONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
+	cal_filp = filp_open(MAG_CALIBRATION_FILE_PATH,
+			     O_RDONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
 	if (IS_ERR(cal_filp)) {
 		set_fs(old_fs);
 		ret = PTR_ERR(cal_filp);
 		memset(&data->magcal, 0, sizeof(data->magcal));
 
-		ssp_errf("Can't open calibration file %d", ret);
+		pr_err("[SSP]: %s - Can't open calibration file %d\n", __func__, ret);
 		return ret;
 	}
 
-	cal_filp->f_pos = MAG_CALIBRATION_DATA_OFFSET;
-	ret = vfs_read(cal_filp, (char *)&data->magcal, sizeof(data->magcal), &cal_filp->f_pos);
-	if (ret != sizeof(data->magcal)) {
+	ret = vfs_read(cal_filp, buffer, sizeof(buffer), &cal_filp->f_pos);
+	if ((ret != sizeof(buffer))) {
 		ret = -EIO;
 		memset(&data->magcal, 0, sizeof(data->magcal));
 	}
 
+	memcpy(&data->magcal, buffer, sizeof(buffer));
+
 	filp_close(cal_filp, current->files);
 	set_fs(old_fs);
 
-	ssp_infof("%d, %d, %d", data->magcal.offset_x, data->magcal.offset_y, data->magcal.offset_z);
-
+	ssp_infof("%d, %d, %d, %d",
+		  data->magcal.offset_x, data->magcal.offset_y, data->magcal.offset_z,
+		  data->magcal.radius);
 	return ret;
 }
 
-int save_mag_cal_data(struct ssp_data *data)
+int save_mag_cal_data(struct ssp_data *data, u8 *cal_data)
 {
 	int ret = 0;
 	struct file *cal_filp = NULL;
 	mm_segment_t old_fs;
-	ssp_infof("%d, %d, %d", data->magcal.offset_x, data->magcal.offset_y, data->magcal.offset_z);
+	char buffer[16] = {0,};
+
+
+	memcpy(&data->magcal, cal_data, sizeof(buffer));
+
+	ssp_infof("%d, %d, %d, %d",
+		  data->magcal.offset_x, data->magcal.offset_y, data->magcal.offset_z,
+		  data->magcal.radius);
+
+	memcpy(buffer, cal_data, sizeof(buffer));
 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 
-	cal_filp = filp_open(MAG_CALIBRATION_FILE_PATH, O_CREAT | O_TRUNC | O_WRONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
+	cal_filp = filp_open(MAG_CALIBRATION_FILE_PATH,
+			     O_CREAT | O_TRUNC | O_WRONLY | O_NOFOLLOW |
+			     O_NONBLOCK, 0660);
 	if (IS_ERR(cal_filp)) {
 		pr_err("[SSP]: %s - Can't open calibration file\n", __func__);
 		set_fs(old_fs);
@@ -1259,13 +1095,11 @@ int save_mag_cal_data(struct ssp_data *data)
 		return -EIO;
 	}
 
-	ret = vfs_write(cal_filp, (char *)&data->magcal, sizeof(data->magcal), &cal_filp->f_pos);
-	if (ret != sizeof(data->magcal)) {
+	ret = vfs_write(cal_filp, buffer, sizeof(buffer), &cal_filp->f_pos);
+	if (ret != sizeof(buffer)) {
 		pr_err("[SSP]: %s - Can't write mag cal to file\n", __func__);
 		ret = -EIO;
 	}
-
-	data->new_magcal = false;
 
 	filp_close(cal_filp, current->files);
 	set_fs(old_fs);
@@ -1276,24 +1110,163 @@ int save_mag_cal_data(struct ssp_data *data)
 int set_mag_cal(struct ssp_data *data)
 {
 	int ret = 0;
+	char buffer[16];
 
 	if (!(data->sensor_probe_state & (1ULL << SENSOR_TYPE_GEOMAGNETIC_FIELD))) {
-		ssp_infof("Skip this function!!! mag sensor is not connected(0x%llx)", data->sensor_probe_state);
+		pr_info("[SSP]: %s - Skip this function!!!"\
+			", mag sensor is not connected(0x%llx)\n",
+			__func__, data->sensor_probe_state);
 		return ret;
 	}
 
+	memcpy(buffer, &data->magcal, sizeof(buffer));
+
 	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_GEOMAGNETIC_FIELD, CAL_DATA, 0,
-			       (char *)&data->magcal, sizeof(data->magcal), NULL, NULL);
+			       (char *)&buffer, sizeof(buffer), NULL, NULL);
 
 	if (ret != SUCCESS) {
 		ssp_errf("ssp_send_command Fail %d", ret);
 		goto exit;
 	}
 
-	ssp_infof("%d, %d, %d", data->magcal.offset_x, data->magcal.offset_y, data->magcal.offset_z);
+	ssp_infof("%d, %d, %d, %d",
+		  data->magcal.offset_x, data->magcal.offset_y, data->magcal.offset_z,
+		  data->magcal.radius);
+
 exit:
 	return ret;
 }
+#else
+
+int mag_open_calibration(struct ssp_data *data)
+{
+	int ret = 0;
+	mm_segment_t old_fs;
+	struct file *cal_filp = NULL;
+	char buffer[14] = {0,};
+
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+
+	cal_filp = filp_open(MAG_CALIBRATION_FILE_PATH,
+			     O_RDONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
+	if (IS_ERR(cal_filp)) {
+		set_fs(old_fs);
+		ret = PTR_ERR(cal_filp);
+		memset(&data->magcal, 0, sizeof(data->magcal));
+
+		pr_err("[SSP]: %s - Can't open calibration file %d\n", __func__, ret);
+		return ret;
+	}
+
+	ret = vfs_read(cal_filp, buffer, sizeof(buffer), &cal_filp->f_pos);
+	if ((ret != sizeof(buffer))) {
+		ret = -EIO;
+		memset(&data->magcal, 0, sizeof(data->magcal));
+	}
+
+	if (buffer[0] == 'M') {
+		data->magcal.accuracy = buffer[1];
+		memcpy(&data->magcal.offset_x, (s16 *)&buffer[2], sizeof(s16));
+		memcpy(&data->magcal.offset_y, (s16 *)&buffer[4], sizeof(s16));
+		memcpy(&data->magcal.offset_z, (s16 *)&buffer[6], sizeof(s16));
+		memcpy(&data->magcal.flucv_x, (s16 *)&buffer[8], sizeof(s16));
+		memcpy(&data->magcal.flucv_y, (s16 *)&buffer[10], sizeof(s16));
+		memcpy(&data->magcal.flucv_z, (s16 *)&buffer[12], sizeof(s16));
+	} else
+		memset(&data->magcal, 0, sizeof(data->magcal));
+
+	filp_close(cal_filp, current->files);
+	set_fs(old_fs);
+
+	ssp_infof("%u, %d, %d, %d, %d, %d, %d",
+		  data->magcal.accuracy, data->magcal.offset_x, data->magcal.offset_y, data->magcal.offset_z,
+		  data->magcal.flucv_x, data->magcal.flucv_y, data->magcal.flucv_z);
+	return ret;
+}
+
+int save_mag_cal_data(struct ssp_data *data, u8 *cal_data)
+{
+	int ret = 0;
+	struct file *cal_filp = NULL;
+	mm_segment_t old_fs;
+	char buffer[14] = {0,};
+
+	data->magcal.accuracy = cal_data[0];
+	memcpy(&data->magcal.offset_x, (s16 *)&cal_data[1], sizeof(s16));
+	memcpy(&data->magcal.offset_y, (s16 *)&cal_data[3], sizeof(s16));
+	memcpy(&data->magcal.offset_z, (s16 *)&cal_data[5], sizeof(s16));
+	memcpy(&data->magcal.flucv_x, (s16 *)&cal_data[7], sizeof(s16));
+	memcpy(&data->magcal.flucv_y, (s16 *)&cal_data[9], sizeof(s16));
+	memcpy(&data->magcal.flucv_z, (s16 *)&cal_data[11], sizeof(s16));
+
+	ssp_infof("%u, %d, %d, %d, %d, %d, %d",
+		  data->magcal.accuracy, data->magcal.offset_x, data->magcal.offset_y, data->magcal.offset_z,
+		  data->magcal.flucv_x, data->magcal.flucv_y, data->magcal.flucv_z);
+
+	buffer[0] = 'M';
+	memcpy(&buffer[1], cal_data, 13);
+
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+
+	cal_filp = filp_open(MAG_CALIBRATION_FILE_PATH,
+			     O_CREAT | O_TRUNC | O_WRONLY | O_NOFOLLOW |
+			     O_NONBLOCK, 0660);
+	if (IS_ERR(cal_filp)) {
+		pr_err("[SSP]: %s - Can't open calibration file\n", __func__);
+		set_fs(old_fs);
+		ret = PTR_ERR(cal_filp);
+		return -EIO;
+	}
+
+	ret = vfs_write(cal_filp, buffer, sizeof(buffer), &cal_filp->f_pos);
+	if (ret != sizeof(buffer)) {
+		pr_err("[SSP]: %s - Can't write mag cal to file\n", __func__);
+		ret = -EIO;
+	}
+
+	filp_close(cal_filp, current->files);
+	set_fs(old_fs);
+
+	return ret;
+}
+
+int set_mag_cal(struct ssp_data *data)
+{
+	int ret = 0;
+	char buffer[13];
+
+	if (!(data->sensor_probe_state & (1ULL << SENSOR_TYPE_GEOMAGNETIC_FIELD))) {
+		pr_info("[SSP]: %s - Skip this function!!!"\
+			", mag sensor is not connected(0x%llx)\n",
+			__func__, data->sensor_probe_state);
+		return ret;
+	}
+
+	buffer[0] = data->magcal.accuracy;
+	memcpy(&buffer[1], &data->magcal.offset_x, sizeof(s16));
+	memcpy(&buffer[3], &data->magcal.offset_y, sizeof(s16));
+	memcpy(&buffer[5], &data->magcal.offset_z, sizeof(s16));
+	memcpy(&buffer[7], &data->magcal.flucv_x, sizeof(s16));
+	memcpy(&buffer[9], &data->magcal.flucv_y, sizeof(s16));
+	memcpy(&buffer[11], &data->magcal.flucv_z, sizeof(s16));
+
+	ret = ssp_send_command(data, CMD_SETVALUE, SENSOR_TYPE_GEOMAGNETIC_FIELD, CAL_DATA, 0,
+			       (char *)&buffer, sizeof(buffer), NULL, NULL);
+
+	if (ret != SUCCESS) {
+		ssp_errf("ssp_send_command Fail %d", ret);
+		goto exit;
+	}
+
+	ssp_infof("%u, %d, %d, %d, %d, %d, %d",
+		  data->magcal.accuracy, data->magcal.offset_x, data->magcal.offset_y, data->magcal.offset_z,
+		  data->magcal.flucv_x, data->magcal.flucv_y, data->magcal.flucv_z);
+exit:
+	return ret;
+}
+#endif
 #endif
 
 int get_sensorname(struct ssp_data *data, int sensor_type, char *name, int size)
@@ -1302,7 +1275,8 @@ int get_sensorname(struct ssp_data *data, int sensor_type, char *name, int size)
 	int buffer_length = 0;
 	int ret;
 
-	ret = ssp_send_command(data, CMD_GETVALUE, sensor_type, SENSOR_NAME, 1000, NULL, 0, &buffer, &buffer_length);
+	ret = ssp_send_command(data, CMD_GETVALUE, sensor_type,
+			       SENSOR_NAME, 1000, NULL, 0, &buffer, &buffer_length);
 
 	if (ret != SUCCESS) {
 		ssp_errf("ssp_send_command Fail %d", ret);
@@ -1329,34 +1303,27 @@ static void timestamp_sync_work_func(struct work_struct *work)
 	struct ssp_data *data = container_of(work, struct ssp_data, work_ts_sync);
 	int ret;
 
-	ret = ssp_send_command(data, CMD_SETVALUE, TYPE_MCU, RTC_TIME, 0, NULL, 0, NULL, NULL);
+	ret = ssp_send_command(data, CMD_SETVALUE, TYPE_MCU, RTC_TIME, 0,
+			       NULL, 0, NULL, NULL);
 	if (ret != SUCCESS) {
 		pr_err("[SSP]: %s - TIMESTAMP_SYNC CMD fail %d\n", __func__, ret);
 		return;
 	}
 }
 
-#if (KERNEL_VERSION(4, 15, 0) <= LINUX_VERSION_CODE)
 static void timestamp_sync_timer_func(struct timer_list *timer)
 {
-	struct ssp_data *data = container_of(timer, struct ssp_data, ts_sync_timer);
+	struct ssp_data *data = from_timer(data, timer, ts_sync_timer);
 
 	queue_work(data->ts_sync_wq, &data->work_ts_sync);
-	mod_timer(&data->ts_sync_timer, round_jiffies_up(jiffies + SSP_TIMESTAMP_SYNC_TIMER_SEC));
+	mod_timer(&data->ts_sync_timer,
+		  round_jiffies_up(jiffies + SSP_TIMESTAMP_SYNC_TIMER_SEC));
 }
-#else
-static void timestamp_sync_timer_func(unsigned long ptr)
-{
-	struct ssp_data *data = (struct ssp_data *)ptr;
-
-	queue_work(data->ts_sync_wq, &data->work_ts_sync);
-	mod_timer(&data->ts_sync_timer, round_jiffies_up(jiffies + SSP_TIMESTAMP_SYNC_TIMER_SEC));
-}
-#endif
 
 void enable_timestamp_sync_timer(struct ssp_data *data)
 {
-	mod_timer(&data->ts_sync_timer, round_jiffies_up(jiffies + SSP_TIMESTAMP_SYNC_TIMER_SEC));
+	mod_timer(&data->ts_sync_timer,
+		  round_jiffies_up(jiffies + SSP_TIMESTAMP_SYNC_TIMER_SEC));
 }
 
 void disable_timestamp_sync_timer(struct ssp_data *data)
@@ -1367,11 +1334,8 @@ void disable_timestamp_sync_timer(struct ssp_data *data)
 
 int initialize_timestamp_sync_timer(struct ssp_data *data)
 {
-#if (KERNEL_VERSION(4, 15, 0) <= LINUX_VERSION_CODE)
 	timer_setup(&data->ts_sync_timer, timestamp_sync_timer_func, 0);
-#else
-	setup_timer(&data->ts_sync_timer, timestamp_sync_timer_func, (unsigned long)data);
-#endif
+
 	data->ts_sync_wq = create_singlethread_workqueue("ssp_ts_sync_wq");
 	if (!data->ts_sync_wq)
 		return -ENOMEM;
@@ -1379,3 +1343,5 @@ int initialize_timestamp_sync_timer(struct ssp_data *data)
 	INIT_WORK(&data->work_ts_sync, timestamp_sync_work_func);
 	return 0;
 }
+
+

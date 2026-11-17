@@ -17,7 +17,6 @@
 #include "ssp.h"
 
 u64 get_current_timestamp(void);
-void get_tm(struct rtc_time *tm);
 
 int parse_dataframe(struct ssp_data *, char *, int);
 
@@ -33,36 +32,25 @@ int initialize_timestamp_sync_timer(struct ssp_data *);
 void get_sensordata(struct ssp_data *, char *, int *, int, struct sensor_value *);
 void get_timestamp(struct ssp_data *, char *, int *, struct sensor_value *, int);
 
-int get_sensorname(struct ssp_data *data, int sensor_type, char *name, int size);
+int get_sensorname(struct ssp_data *data, int sensor_type, char* name, int size);
 
 #ifdef CONFIG_SENSORS_SSP_PROXIMITY
-int set_proximity_threshold(struct ssp_data *data);
+void set_proximity_threshold(struct ssp_data *data);
 #ifdef CONFIG_SENSROS_SSP_PROXIMITY_THRESH_CAL
-int set_proximity_threshold_addval(struct ssp_data *data);
-void do_proximity_calibration(struct ssp_data *data);
-void proximity_calibration_off(struct ssp_data *data);
-#if defined(CONFIG_SENSORS_SSP_PROXIMITY_STK3X6X) || defined(CONFIG_SENSORS_SSP_PROXIMITY_STK3A5X)
-int proximity_open_calibration(struct ssp_data *data);
-int save_prox_cal_threshold_data(struct ssp_data *data);
-#endif
+void set_proximity_threshold_addval(struct ssp_data *data);
 #endif
 #ifdef CONFIG_SENSORS_SSP_PROXIMITY_MODIFY_SETTINGS
-int set_proximity_setting_mode(struct ssp_data *data);
+void set_proximity_setting_mode(struct ssp_data *data);
 int save_proximity_setting_mode(struct ssp_data *data);
 int open_proximity_setting_mode(struct ssp_data *data);
 #endif
-#ifdef CONFIG_SENSORS_SSP_PROXIMITY_FACTORY_CROSSTALK_CAL
-int save_prox_cal_threshold_data(struct ssp_data *data);
-int proximity_open_calibration(struct ssp_data *data);
-#endif
+void do_proximity_calibration(struct ssp_data *data);
+void proximity_calibration_off(struct ssp_data *data);
 #endif
 #ifdef CONFIG_SENSORS_SSP_LIGHT
-int set_light_coef(struct ssp_data *data);
-int set_light_brightness(struct ssp_data *data);
-int set_light_ab_camera_hysteresis(struct ssp_data *data);
-#ifdef CONFIG_SENSORS_SSP_LIGHT_JPNCONCEPT
-int set_light_region(struct ssp_data *data);
-#endif
+void set_light_coef(struct ssp_data *data);
+void set_light_brightness(struct ssp_data *data);
+void set_light_ab_camera_hysteresis(struct ssp_data *data);
 #endif
 #ifdef CONFIG_SENSORS_SSP_GYROSCOPE
 int gyro_open_calibration(struct ssp_data *data);
@@ -82,6 +70,6 @@ int pressure_open_calibration(struct ssp_data *);
 int set_pdc_matrix(struct ssp_data *data);
 int mag_open_calibration(struct ssp_data *data);
 int set_mag_cal(struct ssp_data *data);
-int save_mag_cal_data(struct ssp_data *data);
+int save_mag_cal_data(struct ssp_data *data, u8 *cal_data);
 #endif
 #endif /* __SSP_DATA_H__ */
