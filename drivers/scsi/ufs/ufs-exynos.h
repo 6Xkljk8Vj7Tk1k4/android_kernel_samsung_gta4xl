@@ -566,6 +566,8 @@ struct exynos_ufs {
 	s32			pm_qos_int_value;
 	struct pm_qos_request	pm_qos_fsys0;
 	s32			pm_qos_fsys0_value;
+	/* CPU wake-up latency while the host is not clock-gated, see ufs-exynos.c */
+	struct pm_qos_request	pm_qos_cpu_latency;
 	bool lane1_poweroff;
 	struct ufs_cal_param	*cal_param;
 };

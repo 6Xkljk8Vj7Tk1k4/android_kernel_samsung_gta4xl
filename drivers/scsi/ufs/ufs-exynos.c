@@ -27,6 +27,16 @@
 #include <linux/spinlock.h>
 
 /*
+ * While the host is not clock-gated (requests in flight plus the gating delay
+ * of some 20 ms) no CPU may enter an idle state it needs more than this many
+ * microseconds to leave. Every completion interrupt lands on CPU0; when that
+ * sits in cluster power-down (125 us exit latency on the little cluster, 105
+ * on the big one) each request pays for the wake-up: 3100 random 4k reads per
+ * second on the Exynos 9611 without the request, 5000 with it.
+ */
+#define EXYNOS_UFS_CPU_LATENCY_US	100
+
+/*
  * Unipro attribute value
  */
 #define TXTRAILINGCLOCKS	0x10
@@ -752,6 +762,7 @@ static int exynos_ufs_pre_setup_clocks(struct ufs_hba *hba, bool on)
 	} else {
 		pm_qos_update_request(&ufs->pm_qos_int, 0);
 		pm_qos_update_request(&ufs->pm_qos_fsys0, 0);
+		pm_qos_update_request(&ufs->pm_qos_cpu_latency, PM_QOS_DEFAULT_VALUE);
 	}
 
 	return ret;
@@ -766,6 +777,7 @@ static int exynos_ufs_setup_clocks(struct ufs_hba *hba, bool on)
 	if (on) {
 		pm_qos_update_request(&ufs->pm_qos_int, ufs->pm_qos_int_value);
 		pm_qos_update_request(&ufs->pm_qos_fsys0, ufs->pm_qos_fsys0_value);
+		pm_qos_update_request(&ufs->pm_qos_cpu_latency, EXYNOS_UFS_CPU_LATENCY_US);
 
 	} else {
 		/*
@@ -1002,6 +1014,7 @@ static int __exynos_ufs_suspend(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 
 	pm_qos_update_request(&ufs->pm_qos_int, 0);
 	pm_qos_update_request(&ufs->pm_qos_fsys0, 0);
+	pm_qos_update_request(&ufs->pm_qos_cpu_latency, PM_QOS_DEFAULT_VALUE);
 
 	exynos_ufs_dev_reset_ctrl(ufs, false);
 
@@ -1355,6 +1368,8 @@ static int exynos_ufs_probe(struct platform_device *pdev)
 
 	pm_qos_add_request(&ufs->pm_qos_int, PM_QOS_DEVICE_THROUGHPUT, 0);
 	pm_qos_add_request(&ufs->pm_qos_fsys0, PM_QOS_BUS_THROUGHPUT, 0);
+	pm_qos_add_request(&ufs->pm_qos_cpu_latency, PM_QOS_CPU_DMA_LATENCY,
+			   PM_QOS_DEFAULT_VALUE);
 	if (ufs->tcxo_ex_ctrl)
 		spin_lock_init(&fsys0_tcxo_lock);
 
@@ -1369,6 +1384,7 @@ static int exynos_ufs_remove(struct platform_device *pdev)
 
 	ufshcd_pltfrm_exit(pdev);
 
+	pm_qos_remove_request(&ufs->pm_qos_cpu_latency);
 	pm_qos_remove_request(&ufs->pm_qos_fsys0);
 	pm_qos_remove_request(&ufs->pm_qos_int);
 
