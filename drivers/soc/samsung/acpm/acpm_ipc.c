@@ -680,7 +680,12 @@ retry:
 			return -ETIMEDOUT;
 		}
 
-		queue_work(update_log_wq, &acpm_debug->update_log_work);
+		/*
+		 * Not from the restart path (exynos_acpm_reboot()): the other CPUs are stopped
+		 * by then and waking a worker warns about migrating a task to an offline CPU.
+		 */
+		if (system_state <= SYSTEM_RUNNING)
+			queue_work(update_log_wq, &acpm_debug->update_log_work);
 	}
 
 	return 0;
