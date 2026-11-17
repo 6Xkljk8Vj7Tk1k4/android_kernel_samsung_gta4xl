@@ -20,3 +20,4 @@ obj-$(CONFIG_PHY_EXYNOS_DEBUGFS)	+= phy-exynos-debugfs.o
 obj-$(CONFIG_PHY_SAMSUNG_USB_CAL)      += phy-exynos-usb3p1.o
 obj-$(CONFIG_PHY_SAMSUNG_USB_GEN2)      += phy-exynos-usbdp-gen2-v3.o
 obj-$(CONFIG_PHY_EXYNOS5250_SATA)	+= phy-exynos5250-sata.o
+obj-$(CONFIG_PHY_EXYNOS_USBDRD3)	+= exynos9610/

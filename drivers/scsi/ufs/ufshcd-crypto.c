@@ -300,7 +300,7 @@ int ufshcd_hba_init_crypto_spec(struct ufs_hba *hba,
 	 * crypto init failed, and can't be enabled.
 	 */
 	hba->crypto_capabilities.reg_val =
-			cpu_to_le32(ufshcd_readl(hba, REG_UFS_CCAP));
+			cpu_to_le32(ufshcd_readl(hba, REG_CRYPTO_CAPABILITY));
 	hba->crypto_cfg_register =
 		(u32)hba->crypto_capabilities.config_array_ptr * 0x100;
 	hba->crypto_cap_array =

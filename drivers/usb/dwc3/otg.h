@@ -38,6 +38,8 @@ struct dwc3_ext_otg_ops {
 	void	(*stop)(struct device *dev);
 };
 
+#define DWC3_OTG_MAX_LDOS	(10)
+
 /**
  * struct dwc3_otg: OTG driver data. Shared by HCD and DCD.
  * @otg: USB OTG Transceiver structure.
@@ -65,6 +67,9 @@ struct dwc3_otg {
 	struct regulator	*vbus_reg;
 	int			*ldo_num;
 	int			ldos;
+	/* PHY supply LDOs named by "ldo-names" in the dwc3 node (Exynos 9610, as on 4.14) */
+	struct regulator	*ldo_con[DWC3_OTG_MAX_LDOS];
+	int			ldo_con_num;
 
 	struct pm_qos_request	pm_qos_int_req;
 	int			pm_qos_int_val;

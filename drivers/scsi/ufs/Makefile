@@ -7,6 +7,14 @@ obj-$(CONFIG_SCSI_UFSHCD) += ufshcd-core.o
 ufshcd-core-objs := ufshcd.o ufs-sysfs.o
 obj-$(CONFIG_SCSI_UFSHCD_PCI) += ufshcd-pci.o
 obj-$(CONFIG_SCSI_UFSHCD_PLATFORM) += ufshcd-pltfrm.o
-obj-$(CONFIG_SCSI_UFS_EXYNOS) += ufs-exynos.o ufs-exynos-dbg.o ufs-cal-9630.o
+obj-$(CONFIG_SCSI_UFS_EXYNOS) += ufs-exynos.o ufs-exynos-dbg.o
+ifeq ($(CONFIG_SOC_EXYNOS9610),y)
+obj-$(CONFIG_SCSI_UFS_EXYNOS) += ufs-cal-9610.o
+ifneq (,$(filter $(CONFIG_SCSI_UFS_EXYNOS_SMU) $(CONFIG_SCSI_UFS_EXYNOS_FMP),y))
+obj-y += ufs-exynos-fmp.o
+endif
+else
+obj-$(CONFIG_SCSI_UFS_EXYNOS) += ufs-cal-9630.o
+endif
 obj-$(CONFIG_SCSI_UFS_HISI) += ufs-hisi.o
 ufshcd-core-$(CONFIG_SCSI_UFS_CRYPTO) += ufshcd-crypto.o

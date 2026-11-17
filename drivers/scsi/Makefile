@@ -151,7 +151,14 @@ obj-$(CONFIG_SCSI_ENCLOSURE)	+= ses.o
 obj-$(CONFIG_SCSI_OSD_INITIATOR) += osd/
 obj-$(CONFIG_SCSI_HISI_SAS) += hisi_sas/
 
+# With the TEEGRIS secure OS (tzdev) the RPMB requests come through its kernel client API
+# (9610, driver from the 4.14 tree); scsi_srpmb.o serves the SMC-based variant.
+ifeq ($(CONFIG_TZDEV),y)
+subdir-ccflags-y += -I$(srctree)/drivers/misc/tzdev
+obj-$(CONFIG_UFS_SRPMB)		+= scsi_srpmb-teegris.o
+else
 obj-$(CONFIG_UFS_SRPMB)		+= scsi_srpmb.o
+endif
 
 # This goes last, so that "real" scsi devices probe earlier
 obj-$(CONFIG_SCSI_DEBUG)	+= scsi_debug.o

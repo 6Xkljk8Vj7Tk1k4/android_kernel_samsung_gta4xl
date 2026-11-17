@@ -269,6 +269,40 @@ void dwc3_otg_qos_lock(struct dwc3 *dwc, int level)
     owner 0 - USB
     owner 1 - DP
 */
+/*
+ * The PHY supply LDOs of the Exynos 9610 ("ldo-names" in the dwc3 node). The 4.14 driver
+ * switched them around every gadget/host start; without a consumer the regulator core turns
+ * them off as unused 30 s after boot and USB dies.
+ */
+static void dwc3_otg_ldo_control(struct dwc3_otg *dotg, int on)
+{
+	struct device *dev = dotg->dwc->dev;
+	int i, ret;
+
+	if (dotg->ldo_con_num <= 0)
+		return;
+
+	dev_info(dev, "Turn %s LDO\n", on ? "on" : "off");
+
+	if (on) {
+		for (i = 0; i < dotg->ldo_con_num; i++) {
+			if (IS_ERR_OR_NULL(dotg->ldo_con[i]))
+				continue;
+			ret = regulator_enable(dotg->ldo_con[i]);
+			if (ret)
+				dev_err(dev, "failed to enable LDO[%d]!!\n", i);
+		}
+	} else {
+		for (i = dotg->ldo_con_num - 1; i >= 0; i--) {
+			if (IS_ERR_OR_NULL(dotg->ldo_con[i]))
+				continue;
+			ret = regulator_disable(dotg->ldo_con[i]);
+			if (ret)
+				dev_err(dev, "failed to disable LDO[%d]!!\n", i);
+		}
+	}
+}
+
 int dwc3_otg_phy_enable(struct otg_fsm *fsm, int owner, bool on)
 {
 	struct usb_otg	*otg = fsm->otg;
@@ -293,6 +327,7 @@ int dwc3_otg_phy_enable(struct otg_fsm *fsm, int owner, bool on)
 			dotg->combo_phy_control |= owner_bit;
 			goto out;
 		} else {
+			dwc3_otg_ldo_control(dotg, 1);
 			phy_conn(dwc->usb2_generic_phy, 1);
 
 			if (dotg->pm_qos_int_val)
@@ -317,6 +352,7 @@ err:
 			if (dotg->pm_qos_int_val)
 				pm_qos_update_request(&dotg->pm_qos_int_req, 0);
 			phy_conn(dwc->usb2_generic_phy, 0);
+			dwc3_otg_ldo_control(dotg, 0);
 			/*
 			 * Need to check why phy init_count has mismatch.
 			 * Phy_init is called from usb_phy_roothub_init() in
@@ -847,6 +883,27 @@ int dwc3_otg_init(struct dwc3 *dwc)
 	/* This reference is used by dwc3 modules for checking otg existance */
 	dwc->dotg = dotg;
 	dotg->dwc = dwc;
+
+	dotg->ldo_con_num = of_property_count_strings(dwc->dev->of_node, "ldo-names");
+	if (dotg->ldo_con_num <= 0) {
+		dotg->ldo_con_num = 0;
+	} else if (dotg->ldo_con_num > DWC3_OTG_MAX_LDOS) {
+		dev_err(dwc->dev, "Too many LDOs are defined - %d(MAX %d)!!\n",
+				dotg->ldo_con_num, DWC3_OTG_MAX_LDOS);
+		return -ENOMEM;
+	} else {
+		const char *regulator_name;
+		int i;
+
+		for (i = 0; i < dotg->ldo_con_num; i++) {
+			of_property_read_string_index(dwc->dev->of_node,
+							"ldo-names", i, &regulator_name);
+			dev_info(dwc->dev, "ldo-names[%d] : %s\n", i, regulator_name);
+			dotg->ldo_con[i] = regulator_get(dwc->dev->parent, regulator_name);
+			if (IS_ERR(dotg->ldo_con[i]))
+				dev_err(dwc->dev, "failed to obtain regulator[%d]\n", i);
+		}
+	}
 
 	ret = of_property_read_u32(dwc->dev->of_node,"ldos", &dotg->ldos);
 	if (ret < 0) {

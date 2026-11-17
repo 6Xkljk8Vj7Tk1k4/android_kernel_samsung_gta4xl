@@ -171,3 +171,25 @@ config PHY_EXYNOS_MIPI_DSIM
 	help
 	  Support for MIPI DSI DPHY found on Samsung
 	  and EXYNOS SoCs.
+
+config PHY_EXYNOS_USBDRD3
+	tristate "Exynos 9610 USB DRD PHY3 & PHY2 driver (4.14 calibration code)"
+	depends on SOC_EXYNOS9610 && OF
+	depends on HAS_IOMEM
+	depends on USB_DWC3_EXYNOS
+	depends on !PHY_EXYNOS_USBDRD && !PHY_SAMSUNG_USB_CAL && !PHY_SAMSUNG_USB_GEN2
+	select GENERIC_PHY
+	select MFD_SYSCON
+	help
+	  USB DRD PHY of the Exynos 9610 (drivers/phy/samsung/exynos9610), with the
+	  PHY calibration code of the 4.14 kernel. Excludes the newer PHY drivers
+	  of this directory, which define the same symbols.
+
+config PHY_EXYNOS8895_MIPI
+	tristate "Samsung EXYNOS 8895/9610 MIPI CSI/DSI D-PHY driver (from the 4.14 tree)"
+	depends on HAS_IOMEM
+	depends on ARCH_EXYNOS && OF || COMPILE_TEST
+	select GENERIC_PHY
+	help
+	  MIPI CSI and DSI D-PHY of the Exynos 9610 (compatible
+	  "samsung,mipi-phy-m4s4-top"), the driver the 4.14 kernel used.
