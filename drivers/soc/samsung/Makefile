@@ -48,8 +48,16 @@ obj-$(CONFIG_EXYNOS_DVFS_MANAGER)	+= exynos-dm.o
 obj-$(CONFIG_EXYNOS_MCINFO)	+= exynos-mcinfo.o
 
 #PM
+# the 9610 takes the suspend and system power-mode code of the 4.14 tree: the files of this tree
+# program another SoC's PMU (EINT wake-up mask at 0x60c/0x61c instead of 0x650, a write to
+# 0x3a94, wake-up tables with properties the 9610 device tree does not have)
+ifeq ($(CONFIG_SOC_EXYNOS9610),y)
+obj-$(CONFIG_ARCH_EXYNOS)	+= exynos-powermode-9610.o
+obj-$(CONFIG_ARCH_EXYNOS)	+= exynos-pm-9610.o
+else
 obj-$(CONFIG_ARCH_EXYNOS)	+= exynos-powermode.o
 obj-$(CONFIG_ARCH_EXYNOS)	+= exynos-pm.o
+endif
 
 # CPU HOTPLUG
 obj-$(CONFIG_ARCH_EXYNOS)	+= exynos-cpuhp.o
