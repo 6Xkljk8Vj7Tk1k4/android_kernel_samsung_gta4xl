@@ -865,7 +865,15 @@ static int __init init_sched_energy_data(void)
 		}
 
 		table = get_energy_table(cpu);
-		if (of_property_read_u32(cpu_phandle, "mips-per-mhz", &table->mips_per_mhz)) {
+		/*
+		 * The Exynos 9610 device tree is written for the 4.14 EMS: the same
+		 * relative performance per MHz is called "capacity-mips" there and it
+		 * has no static power. Without this every CPU got a capacity of 0, so
+		 * its utilization was always 0 and schedutil never left the lowest
+		 * frequency.
+		 */
+		if (of_property_read_u32(cpu_phandle, "mips-per-mhz", &table->mips_per_mhz) &&
+		    of_property_read_u32(cpu_phandle, "capacity-mips", &table->mips_per_mhz)) {
 			pr_warn("No mips-per-mhz data\n");
 			return -ENODATA;
 		}
@@ -877,8 +885,11 @@ static int __init init_sched_energy_data(void)
 
 		if (of_property_read_u32(cpu_phandle, "static-power-coefficient",
 								&table->static_coefficient)) {
-			pr_warn("No static-power-coefficient data\n");
-			return -ENODATA;
+			if (!of_property_read_bool(cpu_phandle, "capacity-mips")) {
+				pr_warn("No static-power-coefficient data\n");
+				return -ENODATA;
+			}
+			table->static_coefficient = 0;
 		}
 
 		/*

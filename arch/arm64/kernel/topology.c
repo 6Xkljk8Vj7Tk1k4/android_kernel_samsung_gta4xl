@@ -157,6 +157,44 @@ static int __init parse_cluster(struct device_node *cluster, int depth)
 		i++;
 	} while (c);
 
+	/*
+	 * The Exynos 9610 DTS wraps the cores of a cluster in "coregroupN" nodes (a binding of
+	 * Samsung's 4.14 scheduler). On 4.14 the cpu-map parse failed on them and the topology
+	 * came from the MPIDR, which mainline no longer uses: every CPU ended up in package 0,
+	 * and code that takes the cluster number from the topology (cluster power-down) acted
+	 * on the wrong cluster. Read the cores through the coregroup level instead; cluster0
+	 * and cluster1 then become packages 0 and 1, as the MPIDR gave them.
+	 */
+	if (leaf && !has_cores) {
+		struct device_node *grp;
+		char gname[16];
+		int g = 0;
+
+		do {
+			snprintf(gname, sizeof(gname), "coregroup%d", g);
+			grp = of_get_child_by_name(cluster, gname);
+			if (grp) {
+				i = 0;
+				do {
+					snprintf(name, sizeof(name), "core%d", i);
+					c = of_get_child_by_name(grp, name);
+					if (c) {
+						has_cores = true;
+						ret = parse_core(c, package_id, core_id++);
+						of_node_put(c);
+						if (ret != 0) {
+							of_node_put(grp);
+							return ret;
+						}
+					}
+					i++;
+				} while (c);
+				of_node_put(grp);
+			}
+			g++;
+		} while (grp);
+	}
+
 	if (leaf && !has_cores)
 		pr_warn("%pOF: empty cluster\n", cluster);
 

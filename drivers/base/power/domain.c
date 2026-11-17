@@ -2248,8 +2248,19 @@ static int __genpd_dev_pm_attach(struct device *dev, struct device_node *np,
 
 	ret = of_parse_phandle_with_args(np, "power-domains",
 				"#power-domain-cells", index, &pd_args);
-	if (ret < 0)
-		return ret;
+	if (ret < 0) {
+		if (ret != -ENOENT || index)
+			return ret;
+
+		/*
+		 * The legacy Samsung binding, which 4.14 still accepted ("for backwards
+		 * compatibility of DT ABI") and the Exynos 9610 DTS uses throughout.
+		 */
+		pd_args.args_count = 0;
+		pd_args.np = of_parse_phandle(np, "samsung,power-domain", 0);
+		if (!pd_args.np)
+			return -ENOENT;
+	}
 
 	mutex_lock(&gpd_list_lock);
 	pd = genpd_get_from_provider(&pd_args);
@@ -2311,7 +2322,8 @@ int genpd_dev_pm_attach(struct device *dev)
 	 * can only attach one PM domain per device.
 	 */
 	if (of_count_phandle_with_args(dev->of_node, "power-domains",
-				       "#power-domain-cells") != 1)
+				       "#power-domain-cells") != 1 &&
+	    !of_find_property(dev->of_node, "samsung,power-domain", NULL))
 		return 0;
 
 	return __genpd_dev_pm_attach(dev, dev->of_node, 0, true);

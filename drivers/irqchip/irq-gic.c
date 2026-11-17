@@ -1038,8 +1038,15 @@ static int gic_irq_domain_translate(struct irq_domain *d,
 
 		*type = fwspec->param[2] & IRQ_TYPE_SENSE_MASK;
 
-		/* Make it clear that broken DTs are... broken */
+		/*
+		 * Make it clear that broken DTs are... broken. Not on the 9610: its DTS, taken
+		 * unchanged from the 4.14 kernel (which has no such check), gives type 0 for
+		 * dozens of interrupts (sysmmu, i2c, itmon, ufs, uart, tzdev), and 36 backtraces
+		 * push the real boot log out of the small early log buffer.
+		 */
+#ifndef CONFIG_SOC_EXYNOS9610
 		WARN(*type == IRQ_TYPE_NONE, "Interrupt of type IRQ_TYPE_NONE is not allowed. hwirq:%lu", *hwirq);
+#endif
 		return 0;
 	}
 

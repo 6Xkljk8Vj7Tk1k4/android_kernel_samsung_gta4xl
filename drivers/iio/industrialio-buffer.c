@@ -588,7 +588,16 @@ static int iio_compute_scan_bytes(struct iio_dev *indio_dev,
 		largest = max(largest, length);
 	}
 
-	bytes = ALIGN(bytes, largest);
+	/*
+	 * ALIGN() is only defined for powers of two. The Exynos 9610 sensor hub
+	 * driver (drivers/sensorhub) describes a whole sensor event as one
+	 * "timestamp" element of odd size (accelerometer: 14 bytes), for which
+	 * this rounding returns garbage (18). Its HAL reads exactly the element
+	 * size, as it did on 4.14, which lacks this rounding, and got -EINVAL
+	 * from the kfifo on every read.
+	 */
+	if (is_power_of_2(largest))
+		bytes = ALIGN(bytes, largest);
 	return bytes;
 }
 

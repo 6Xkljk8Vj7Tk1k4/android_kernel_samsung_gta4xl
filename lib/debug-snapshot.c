@@ -612,6 +612,18 @@ int __init dbg_snapshot_reserved_mem_check(unsigned long node, unsigned long siz
 			break;
 	}
 
+#ifdef CONFIG_SOC_EXYNOS9610
+	/*
+	 * gta4xl: an item is enabled by having a reserved-memory node, as on its 4.14 kernel
+	 * (see dbg_snapshot_item_reserved_mem_setup()). This check runs first, while the fdt
+	 * code decides whether to reserve the region at all: with the items still "disabled"
+	 * here, 23 MB of debug-snapshot regions (log_kernel ... log_kevents) were handed to
+	 * the page allocator although the bootloader and the test harness's RAM log use them,
+	 * and kernel log text ended up in the pages of user processes.
+	 */
+	if (i < ARRAY_SIZE(dss_items))
+		dss_items[i].entry.enabled = true;
+#endif
 	if (i == ARRAY_SIZE(dss_items) || !dss_items[i].entry.enabled)
 		ret = -EINVAL;
 out:
@@ -703,6 +715,14 @@ static int __init dbg_snapshot_item_reserved_mem_setup(struct reserved_mem *reme
 	if (i == ARRAY_SIZE(dss_items))
 		return -ENODEV;
 
+#ifdef CONFIG_SOC_EXYNOS9610
+	/*
+	 * gta4xl: an item is enabled by having a reserved-memory node, as on its 4.14 kernel.
+	 * This tree enables log_kernel, log_pstore, ... through a "dpm" debug policy that the
+	 * 9610 DTS does not have, which left a boot without kernel log and without pstore.
+	 */
+	dss_items[i].entry.enabled = true;
+#endif
 	if (!dss_items[i].entry.enabled)
 		return -ENODEV;
 
