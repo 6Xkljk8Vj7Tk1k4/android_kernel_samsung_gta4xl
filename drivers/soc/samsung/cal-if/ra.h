@@ -73,8 +73,7 @@ extern int pll_get_locktime(struct cmucal_pll *pll);
 extern int pll_find_table(struct cmucal_pll *pll,
 			  struct cmucal_pll_table *table,
 			  unsigned long long fin,
-			  unsigned long long rate,
-			  unsigned long long rate_hz);
+			  unsigned long long rate);
 extern void ra_set_clk_by_type(unsigned int *list,
 			    struct vclk_lut *lut,
 			    unsigned int num_list,
@@ -97,8 +96,8 @@ extern void ra_select_switch_pll(struct vclk_switch *info, unsigned int value);
 extern int ra_set_list_enable(unsigned int *list, unsigned int num_list);
 extern int ra_set_list_disable(unsigned int *list, unsigned int num_list);
 extern struct cmucal_clk *ra_get_parent(unsigned int id);
-extern unsigned long ra_recalc_rate(unsigned int id);
-extern unsigned long ra_get_value(unsigned int id);
+extern unsigned int ra_recalc_rate(unsigned int id);
+extern unsigned int ra_get_value(unsigned int id);
 extern int ra_set_value(unsigned int id, unsigned int params);
 extern int ra_set_rate(unsigned int id, unsigned int rate);
 extern int ra_set_enable(unsigned int id, unsigned int params);

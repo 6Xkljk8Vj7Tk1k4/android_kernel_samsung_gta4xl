@@ -19,7 +19,12 @@ obj-$(CONFIG_SEC_DEBUG)			+= sec_debug_test.o
 obj-$(CONFIG_SEC_DEBUG)			+= sec_debug_ksym.o
 obj-$(CONFIG_SEC_DEBUG)			+= sec_debug_mode.o
 obj-$(CONFIG_SEC_DEBUG)			+= sec_debug_memtab.o
+# reads debug history, boot reset and reset summary from fixed offsets of this tree's
+# PARAM partition layout; the 9610 keeps its debug history in reserved memory
+# (sec_debug_hist.c), and both would register /proc/debug_history
+ifndef CONFIG_SOC_EXYNOS9610
 obj-$(CONFIG_SEC_DEBUG)			+= sec_debug_param.o
+endif
 obj-$(CONFIG_SEC_DEBUG)			+= sec_debug_dprm.o
 obj-$(CONFIG_SEC_DEBUG_DUMP_SUMMARY)	+= sec_debug_summary.o
 obj-$(CONFIG_SEC_DEBUG_HIST_LOG) 	+= sec_debug_hist.o

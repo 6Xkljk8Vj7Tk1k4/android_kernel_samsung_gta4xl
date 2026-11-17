@@ -19,20 +19,18 @@ enum pmucal_seq_acctype {
 	PMUCAL_WRITE,
 	PMUCAL_COND_READ,
 	PMUCAL_COND_WRITE,
+	PMUCAL_INV_COND_WRITE,
 	PMUCAL_SAVE_RESTORE,
 	PMUCAL_COND_SAVE_RESTORE,
 	PMUCAL_WAIT,
-	PMUCAL_WAIT_TWO,
+	PMUCAL_RAW_WAIT,
 	PMUCAL_CHECK_SKIP,
 	PMUCAL_COND_CHECK_SKIP,
+#ifdef CONFIG_FLEXPMU
 	PMUCAL_WRITE_WAIT,
-	PMUCAL_WRITE_RETRY,
-	PMUCAL_WRITE_RETRY_INV,
 	PMUCAL_WRITE_RETURN,
-	PMUCAL_SET_BIT_ATOMIC,
-	PMUCAL_CLR_BIT_ATOMIC,
+#endif
 	PMUCAL_DELAY,
-	PMUCAL_CLEAR_PEND,
 };
 
 /* represents each row in the PMU sequence guide */
@@ -72,11 +70,13 @@ struct pmucal_seq {
 	.need_skip = false,						\
 }
 
+#ifdef CONFIG_FLEXPMU
 #define PMUCAL_CPU_INFORM(_cpu_num, _base_pa, _offset) {		\
 	.cpu_num = _cpu_num,						\
 	.base_pa = _base_pa,						\
 	.base_va = NULL,						\
 	.offset = _offset,						\
 }
+#endif
 
 #endif

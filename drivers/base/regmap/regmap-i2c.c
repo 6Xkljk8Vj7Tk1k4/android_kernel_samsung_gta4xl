@@ -29,7 +29,7 @@ static int regmap_apm_byte_reg_read(void *context, unsigned int reg,
 	if (reg > 0xff)
 		return -EINVAL;
 
-	ret = exynos_acpm_read_reg(0, i2c->addr, reg, &reg_val);
+	ret = exynos_acpm_read_reg(i2c->addr, reg, &reg_val);
 	*val = reg_val;
 
 	if (ret < 0)
@@ -47,7 +47,7 @@ static int regmap_apm_byte_reg_write(void *context, unsigned int reg,
 	if (val > 0xff || reg > 0xff)
 		return -EINVAL;
 
-	return exynos_acpm_write_reg(0, i2c->addr, reg, val);
+	return exynos_acpm_write_reg(i2c->addr, reg, val);
 }
 
 static struct regmap_bus regmap_apm_byte = {

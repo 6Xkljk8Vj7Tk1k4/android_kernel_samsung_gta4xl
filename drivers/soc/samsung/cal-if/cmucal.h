@@ -144,11 +144,6 @@ struct vclk {
 };
 
 enum clk_pll_type {
-	pll_0816x = 8160,
-	pll_0818x = 8180,
-	pll_0822x = 8220,
-	pll_0831x = 8310,
-
 	PLL_1416X = 14160,
 	PLL_1417X = 14170,
 	PLL_1418X = 14180,
@@ -187,12 +182,6 @@ enum margin_id {
 	MARGIN_AUD,
 	MARGIN_IVA,
 	MARGIN_SCORE,
-	MARGIN_MFC,
-	MARGIN_NPU,
-	MARGIN_MID,
-	MARGIN_DSP,
-	MARGIN_TNR,
-	MARGIN_DNC,
 	MAX_MARGIN_ID,
 };
 
@@ -339,11 +328,11 @@ struct pll_spec {
  * @pdiv, @mdiv, @sdiv, @kdiv: for rate
  */
 struct cmucal_pll_table {
-	unsigned long		rate;
+	unsigned int		rate;
 	unsigned short		pdiv;
 	unsigned short		mdiv;
 	unsigned short		sdiv;
-	signed int		kdiv;
+	signed short		kdiv;
 };
 
 /*
@@ -412,19 +401,6 @@ struct cmucal_clkout {
 	unsigned int		en;
 };
 
-#define CMUCAL_VCLK2(_id, _lut, _list, _seq, _switch) \
-[_id & MASK_OF_ID] = {	\
-	.id		= _id,						\
-	.name		= #_id,						\
-	.lut		= NULL,						\
-	.list		= _list,					\
-	.seq		= _seq,						\
-	.num_rates	= 0,						\
-	.num_list	= (sizeof(_list) / sizeof((_list)[0])),		\
-	.switch_info	= _switch,					\
-	.ops		= NULL,						\
-}
-
 #define CMUCAL_VCLK(_id, _lut, _list, _seq, _switch) \
 [_id & MASK_OF_ID] = {	\
 	.id		= _id,						\
@@ -433,6 +409,19 @@ struct cmucal_clkout {
 	.list		= _list,					\
 	.seq		= _seq,						\
 	.num_rates	= (sizeof(_lut) / sizeof((_lut)[0])),		\
+	.num_list	= (sizeof(_list) / sizeof((_list)[0])),		\
+	.switch_info	= _switch,					\
+	.ops		= NULL,						\
+}
+
+#define CMUCAL_VCLK2(_id, _lut, _list, _seq, _switch) \
+[_id & MASK_OF_ID] = {	\
+	.id		= _id,						\
+	.name		= #_id,						\
+	.lut		= NULL,						\
+	.list		= _list,					\
+	.seq		= _seq,						\
+	.num_rates	= 0,						\
 	.num_list	= (sizeof(_list) / sizeof((_list)[0])),		\
 	.switch_info	= _switch,					\
 	.ops		= NULL,						\
@@ -646,14 +635,4 @@ extern void *cmucal_get_sfr_node(unsigned int id);
 extern unsigned int cmucal_get_id(char *name);
 extern unsigned int cmucal_get_id_by_addr(unsigned int addr);
 extern void (*cal_data_init)(void);
-extern int (*cal_check_hiu_dvfs_id)(u32 id);
-extern void (*cal_set_cmu_smpl_warn)(void);
-#ifdef CONFIG_CMUCAL_DEBUG
-extern void cmucal_dbg_set_cmu_top_base(u32 base_addr);
-#else
-static inline void cmucal_dbg_set_cmu_top_base(u32 base_addr)
-{
-	return ;
-}
-#endif
 #endif

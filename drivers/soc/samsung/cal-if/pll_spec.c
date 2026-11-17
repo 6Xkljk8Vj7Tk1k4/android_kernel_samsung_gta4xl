@@ -1,50 +1,6 @@
 #include "cmucal.h"
 #include "ra.h"
 
-static struct pll_spec gpll0816X_spec = {
-	1,		63,
-	64,		1023,
-	0,		6,
-	0,		0,
-	4.5*MHZ,		12*MHZ,
-	2250*MHZ,	4500*MHZ,
-	35.2*MHZ,	4500*MHZ,
-	150,		0,
-};
-
-static struct pll_spec gpll0822X_spec = {
-	1,		63,
-	64,		1023,
-	0,		6,
-	0,		0,
-	4*MHZ,		12*MHZ,
-	950*MHZ,	2400*MHZ,
-	14.8*MHZ,	2400*MHZ,
-	150,		0,
-};
-
-static struct pll_spec gpll0818X_spec = {
-	1,		63,
-	64,		1023,
-	0,		6,
-	0,		0,
-	2*MHZ,		8*MHZ,
-	600*MHZ,	1200*MHZ,
-	9.5*MHZ,	1200*MHZ,
-	150,		0,
-};
-
-static struct pll_spec gpll0831X_spec = {
-	1,		63,
-	16,		511,
-	0,		6,
-	-32767,		32767,
-	6*MHZ,		30*MHZ,
-	600*MHZ,	1200*MHZ,
-	9.5*MHZ,	1200*MHZ,
-	150,		500,
-};
-
 static struct pll_spec gpll1416X_spec = {
 	1,		63,
 	64,		1023,
@@ -316,18 +272,6 @@ struct pll_spec *pll_get_spec(struct cmucal_pll *pll)
 	case PLL_1031X:
 		pll_spec = &gpll1031X_spec;
 		break;
-	case pll_0816x:
-		pll_spec = &gpll0816X_spec;
-		break;
-	case pll_0822x:
-		pll_spec = &gpll0822X_spec;
-		break;
-	case pll_0818x:
-		pll_spec = &gpll0818X_spec;
-		break;
-	case pll_0831x:
-		pll_spec = &gpll0831X_spec;
-		break;
 	default:
 		pll_spec = NULL;
 	}
@@ -376,8 +320,7 @@ EXPORT_SYMBOL_GPL(pll_get_locktime);
 int pll_find_table(struct cmucal_pll *pll,
 		   struct cmucal_pll_table *table,
 		   unsigned long long fin,
-		   unsigned long long rate,
-		   unsigned long long rate_hz)
+		   unsigned long long rate)
 {
 	struct pll_spec *pll_spec;
 	unsigned int p, m, s;
@@ -393,7 +336,7 @@ int pll_find_table(struct cmucal_pll *pll,
 	}
 
 	/* khz_to_hz() : for calculate precisely  */
-	rate = rate_hz ? rate_hz : khz_to_hz(rate);
+	rate = khz_to_hz(rate);
 
 	for (p = pll_spec->pdiv_min; p <= pll_spec->pdiv_max; p++) {
 		/* check fref  */

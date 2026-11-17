@@ -8,7 +8,7 @@
 #include "cmucal.h"
 #include "ra.h"
 
-static enum trans_opt ra_get_trans_opt(unsigned long to, unsigned long from)
+static enum trans_opt ra_get_trans_opt(unsigned int to, unsigned int from)
 {
 	if (from == to)
 		return TRANS_IGNORE;
@@ -61,33 +61,10 @@ static unsigned int ra_get_fixed_factor(struct cmucal_clk *clk)
 }
 
 static struct cmucal_pll_table *get_pll_table(struct cmucal_pll *pll_clk,
-					      unsigned long rate,
-					      unsigned long rate_hz)
+					      unsigned long rate)
 {
 	struct cmucal_pll_table *prate_table = pll_clk->rate_table;
 	int i;
-
-	if (rate_hz) {
-		unsigned long matching = rate_hz;
-
-		/* Skip Hz unit matching. It is too ideal. */
-
-		/* 10Hz unit */
-		do_div(matching, 10);
-		for (i = 0; i < pll_clk->rate_count; i++) {
-			if (matching == prate_table[i].rate / 10)
-				return &prate_table[i];
-		}
-
-		/* Fallback: 100Hz unit */
-		do_div(matching, 10);
-		for (i = 0; i < pll_clk->rate_count; i++) {
-			if (matching == prate_table[i].rate / 100)
-				return &prate_table[i];
-		}
-
-		/* Fallback: 1000Hz unit */
-	}
 
 	for (i = 0; i < pll_clk->rate_count; i++) {
 		if (rate == prate_table[i].rate / 1000)
@@ -293,14 +270,13 @@ static int ra_set_div_rate(struct cmucal_clk *clk, unsigned int rate)
 	return ret;
 }
 
-static int ra_set_pll(struct cmucal_clk *clk, unsigned int rate,
-		      unsigned int rate_hz)
+static int ra_set_pll(struct cmucal_clk *clk, unsigned int rate)
 {
 	struct cmucal_pll *pll;
 	struct cmucal_pll_table *rate_table;
 	struct cmucal_pll_table table;
 	struct cmucal_clk *umux;
-	unsigned long fin;
+	unsigned int fin;
 	int ret = 0;
 
 	pll = to_pll_clk(clk);
@@ -313,14 +289,14 @@ static int ra_set_pll(struct cmucal_clk *clk, unsigned int rate,
 		}
 		ra_enable_pll(clk, 0);
 	} else {
-		rate_table = get_pll_table(pll, rate, rate_hz);
+		rate_table = get_pll_table(pll, rate);
 		if (!rate_table) {
 			if (IS_FIXED_RATE(clk->pid))
 				fin = ra_get_value(clk->pid);
 			else
 				fin = FIN_HZ_26M;
 
-			ret = pll_find_table(pll, &table, fin, rate, rate_hz);
+			ret = pll_find_table(pll, &table, fin, rate);
 			if (ret) {
 				pr_err("failed %s table %u\n", clk->name, rate);
 				return ret;
@@ -340,7 +316,7 @@ static int ra_set_pll(struct cmucal_clk *clk, unsigned int rate,
 	return ret;
 }
 
-static unsigned long ra_get_pll(struct cmucal_clk *clk)
+static unsigned int ra_get_pll(struct cmucal_clk *clk)
 {
 	struct cmucal_pll *pll;
 	unsigned int mdiv, pdiv, sdiv, pll_con0;
@@ -608,10 +584,10 @@ int ra_enable_clkout(struct cmucal_clk *clk, bool enable)
 		exynos_pmu_update(clk->offset_idx, get_mask(clk->width, clk->shift),
 				clkout->sel << clk->shift);
 		exynos_pmu_update(clk->offset_idx, get_mask(clk->e_width, clk->e_shift),
-				0x0 << clk->e_shift);
+				clkout->en << clk->e_shift);
 	} else {
 		exynos_pmu_update(clk->offset_idx, get_mask(clk->e_width, clk->e_shift),
-				0x1 << clk->e_shift);
+				(!clkout->en) << clk->e_shift);
 	}
 
 	return 0;
@@ -684,7 +660,7 @@ int ra_set_value(unsigned int id, unsigned int params)
 		ret = ra_set_div_mux(clk, params);
 		break;
 	case PLL_TYPE:
-		ret = ra_set_pll(clk, params, 0);
+		ret = ra_set_pll(clk, params);
 		break;
 	case GATE_TYPE:
 		ret = ra_set_gate(clk, params);
@@ -697,11 +673,11 @@ int ra_set_value(unsigned int id, unsigned int params)
 	return ret;
 }
 
-unsigned long ra_get_value(unsigned int id)
+unsigned int ra_get_value(unsigned int id)
 {
 	struct cmucal_clk *clk;
 	unsigned type = GET_TYPE(id);
-	unsigned long val;
+	unsigned int val;
 
 	clk = cmucal_get_node(id);
 	if (!clk) {
@@ -892,7 +868,7 @@ void ra_set_pll_ops(unsigned int *list,
 		unsigned int num_list,
 		struct vclk_trans_ops *ops)
 {
-	unsigned long from, to;
+	unsigned int from, to;
 	int i;
 	bool trans;
 
@@ -924,7 +900,7 @@ void ra_set_clk_by_type(unsigned int *list,
 		     unsigned int type,
 		     enum trans_opt opt)
 {
-	unsigned long from, to;
+	unsigned int from, to;
 	int i;
 	bool trans;
 
@@ -950,7 +926,7 @@ void ra_set_clk_by_seq(unsigned int *list,
 		    struct vclk_seq *seq,
 		    unsigned int num_list)
 {
-	unsigned long from, to;
+	unsigned int from, to;
 	unsigned int i, idx;
 	bool trans;
 
@@ -1001,7 +977,7 @@ int ra_compare_clk_list(unsigned int *params,
 
 	return 0;
 mismatch:
-	pr_debug("mis-match %s <%u %lu> \n",
+	pr_debug("mis-match %s <%u %u> \n",
 		 clk->name, params[i], ra_get_value(list[i]));
 	return -EVCLKNOENT;
 }
@@ -1099,7 +1075,7 @@ int ra_set_rate(unsigned int id, unsigned int rate)
 
 	switch (GET_TYPE(clk->id)) {
 	case PLL_TYPE:
-		ret = ra_set_pll(clk, rate / 1000, rate);
+		ret = ra_set_pll(clk, rate/1000);
 		break;
 	case DIV_TYPE:
 		ret = ra_set_div_rate(clk, rate);
@@ -1117,13 +1093,13 @@ int ra_set_rate(unsigned int id, unsigned int rate)
 }
 EXPORT_SYMBOL_GPL(ra_set_rate);
 
-unsigned long ra_recalc_rate(unsigned int id)
+unsigned int ra_recalc_rate(unsigned int id)
 {
 	struct cmucal_clk *clk;
 	unsigned int cur;
 	unsigned int clk_path[RECALC_MAX];
-	unsigned int depth;
-	unsigned long rate, ratio;
+	unsigned int depth, ratio;
+	unsigned long rate;
 
 	if (GET_TYPE(id) > GATE_TYPE)
 		return 0;

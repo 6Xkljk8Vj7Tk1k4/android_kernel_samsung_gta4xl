@@ -115,9 +115,6 @@ void *cmucal_get_node(unsigned int id)
 		else
 			node = get_node(cmucal_vclk_list, idx);
 		break;
-	case ACPM_VCLK_TYPE:
-		node = get_node(acpm_vclk_list, idx);
-		break;
 	default:
 		pr_info("unsupport cmucal node %x\n", id);
 	}

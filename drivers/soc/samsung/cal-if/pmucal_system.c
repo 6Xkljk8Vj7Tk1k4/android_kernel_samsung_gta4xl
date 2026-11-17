@@ -1,9 +1,11 @@
 #include "pmucal_system.h"
 #include "pmucal_rae.h"
-#include "pmucal_powermode.h"
 #include <soc/samsung/exynos-debug.h>
+#ifdef CONFIG_FLEXPMU
+#include "pmucal_powermode.h"
 
 unsigned int pmucal_sys_powermode[NUM_SYS_POWERDOWN] = {0xffffffff, };
+#endif
 
 /**
  *  pmucal_system_enter - prepares to enter a system power mode.
@@ -15,7 +17,7 @@ unsigned int pmucal_sys_powermode[NUM_SYS_POWERDOWN] = {0xffffffff, };
  */
 int pmucal_system_enter(int mode)
 {
-	int ret;
+	int ret = 0;
 
 	if (mode != SYS_SICD)
 		dbg_snapshot_pmu(mode, __func__, DSS_FLAG_IN);
@@ -33,8 +35,9 @@ int pmucal_system_enter(int mode)
 		ret = -ENOENT;
 		goto err_out;
 	}
-
+#ifdef CONFIG_FLEXPMU
 	pmucal_powermode_hint(pmucal_sys_powermode[mode]);
+#endif
 
 	pmucal_rae_save_seq(pmucal_lpm_list[mode].save, pmucal_lpm_list[mode].num_save);
 
@@ -48,9 +51,6 @@ int pmucal_system_enter(int mode)
 
 	if (mode != SYS_SICD)
 		dbg_snapshot_pmu(mode, __func__, DSS_FLAG_OUT);
-
-	pmucal_dbg_set_emulation(pmucal_lpm_list[mode].dbg);
-	pmucal_dbg_do_profile(pmucal_lpm_list[mode].dbg, false);
 
 	return 0;
 
@@ -71,7 +71,7 @@ err_out:
  */
 int pmucal_system_exit(int mode)
 {
-	int ret;
+	int ret = 0;
 
 	if (mode != SYS_SICD)
 		dbg_snapshot_pmu(mode, __func__, DSS_FLAG_IN);
@@ -109,8 +109,6 @@ int pmucal_system_exit(int mode)
 	if (mode != SYS_SICD)
 		dbg_snapshot_pmu(mode, __func__, DSS_FLAG_OUT);
 
-	pmucal_dbg_do_profile(pmucal_lpm_list[mode].dbg, true);
-
 	return 0;
 
 err_out:
@@ -130,7 +128,7 @@ err_out:
  */
 int pmucal_system_earlywakeup(int mode)
 {
-	int ret;
+	int ret = 0;
 
 	if (mode != SYS_SICD)
 		dbg_snapshot_pmu(mode, __func__, DSS_FLAG_IN);
@@ -164,7 +162,9 @@ int pmucal_system_earlywakeup(int mode)
 				PMUCAL_PREFIX, __func__, mode);
 		goto err_out;
 	}
+#ifdef CONFIG_FLEXPMU
 	pmucal_powermode_hint_clear();
+#endif
 
 	if (mode != SYS_SICD)
 		dbg_snapshot_pmu(mode, __func__, DSS_FLAG_OUT);

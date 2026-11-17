@@ -31,12 +31,12 @@ int exynos_acpm_set_rate(unsigned int id, unsigned long rate)
 	config.response = true;
 	config.indirection = false;
 	config.cmd[0] = id;
-	config.cmd[1] = (unsigned int)rate;
+	config.cmd[1] = rate;
 	config.cmd[2] = FREQ_REQ;
 	config.cmd[3] = 0;
 
 	before = sched_clock();
-	ret = acpm_ipc_send_data_lazy(acpm_dvfs.ch_num, &config);
+	ret = acpm_ipc_send_data(acpm_dvfs.ch_num, &config);
 	after = sched_clock();
 	latency = after - before;
 	if (ret)
@@ -64,7 +64,7 @@ int exynos_acpm_set_init_freq(unsigned int dfs_id, unsigned long freq)
 	config.cmd[3] = SET_INIT_FREQ;
 
 	before = sched_clock();
-	ret = acpm_ipc_send_data_lazy(acpm_dvfs.ch_num, &config);
+	ret = acpm_ipc_send_data(acpm_dvfs.ch_num, &config);
 	after = sched_clock();
 	latency = after - before;
 	if (ret)
@@ -90,7 +90,7 @@ unsigned long exynos_acpm_get_rate(unsigned int id)
 	config.cmd[3] = 0;
 
 	before = sched_clock();
-	ret = acpm_ipc_send_data_lazy(acpm_dvfs.ch_num, &config);
+	ret = acpm_ipc_send_data(acpm_dvfs.ch_num, &config);
 	after = sched_clock();
 	latency = after - before;
 	if (ret)
@@ -100,12 +100,10 @@ unsigned long exynos_acpm_get_rate(unsigned int id)
 	return config.cmd[1];
 }
 
-/* This list have to follow the enum margin_id in cmucal.h */
 const char *margin_list[MAX_MARGIN_ID] = {
 		"MIF", "INT", "BIG", "LIT", "G3D",
 		"INTCAM", "CAM", "DISP", "G3DM",
-		"CP", "FSYS0", "AUD", "IVA", "SCORE", "MFC", "NPU", "MID",
-		"DSP", "TNR", "DNC"};
+		"CP", "FSYS0", "AUD", "IVA", "SCORE"};
 
 int exynos_acpm_set_volt_margin(unsigned int id, int volt)
 {
@@ -124,7 +122,7 @@ int exynos_acpm_set_volt_margin(unsigned int id, int volt)
 	config.cmd[3] = 0;
 
 	before = sched_clock();
-	ret = acpm_ipc_send_data_lazy(acpm_dvfs.ch_num, &config);
+	ret = acpm_ipc_send_data(acpm_dvfs.ch_num, &config);
 	after = sched_clock();
 	latency = after - before;
 	if (ret)
@@ -132,7 +130,7 @@ int exynos_acpm_set_volt_margin(unsigned int id, int volt)
 			__func__, id, latency, ret);
 
 	vclk = cmucal_get_node(id);
-	pr_auto(ASL5, "%s: [%s] +margin %d uV\n", __func__, vclk ? margin_list[vclk->margin_id] : " ", volt);
+	pr_auto(ASL5, "%s: [%s] +margin %d uV\n", __func__, margin_list[vclk->margin_id], volt);
 
 	return ret;
 }
@@ -154,7 +152,7 @@ int exynos_acpm_set_cold_temp(unsigned int id, bool is_cold_temp)
 	config.cmd[3] = 0;
 
 	before = sched_clock();
-	ret = acpm_ipc_send_data_lazy(acpm_dvfs.ch_num, &config);
+	ret = acpm_ipc_send_data(acpm_dvfs.ch_num, &config);
 	after = sched_clock();
 	latency = after - before;
 	if (ret)
@@ -217,7 +215,7 @@ static int acpm_gpu_tmu_notifier(struct notifier_block *nb, unsigned long event,
 static void acpm_dvfs_get_cpu_cold_temp_list(struct device *dev)
 {
 	struct device_node *node = dev->of_node;
-	int proplen;
+	unsigned int proplen;
 
 	proplen = of_property_count_u32_elems(node, "cpu_cold_temp_list");
 

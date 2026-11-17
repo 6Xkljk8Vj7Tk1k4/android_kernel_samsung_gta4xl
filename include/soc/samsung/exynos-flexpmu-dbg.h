@@ -25,6 +25,8 @@ extern void exynos_flexpmu_dbg_suspend_mif_req(void);
 extern void exynos_flexpmu_dbg_resume_mif_req(void);
 #else
 #define exynos_flexpmu_dbg_log_stop()		do { } while(0)
+#define exynos_flexpmu_dbg_suspend_mif_req()	do { } while(0)
+#define exynos_flexpmu_dbg_resume_mif_req()	do { } while(0)
 static inline int exynos_acpm_pasr_mask_read(void)
 {
 	return 0;

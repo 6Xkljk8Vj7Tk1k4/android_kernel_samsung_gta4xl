@@ -45,7 +45,7 @@ enum isp_noti_state_t {
 	ISP_TRIPPING,
 };
 
-#ifdef CONFIG_EXYNOS_THERMAL_V2
+#if defined(CONFIG_EXYNOS_THERMAL_V2) || defined(CONFIG_CPU_THERMAL)
 extern int exynos_tmu_add_notifier(struct notifier_block *n);
 #else
 static inline int exynos_tmu_add_notifier(struct notifier_block *n)

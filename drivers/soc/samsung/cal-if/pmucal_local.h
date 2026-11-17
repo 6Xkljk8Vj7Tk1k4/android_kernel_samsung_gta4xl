@@ -1,10 +1,9 @@
 #ifndef __PMUCAL_LOCAL_H__
 #define __PMUCAL_LOCAL_H__
 #include "pmucal_common.h"
-#include "pmucal_dbg.h"
 
-/* In Exynos, the number of MAX_POWER_DOMAIN is less than 32 */
-#define PMUCAL_NUM_PDS	32
+/* In Exynos, the number of MAX_POWER_DOMAIN is less than 20 */
+#define PMUCAL_NUM_PDS	20
 
 /* will be a member of struct exynos_pm_domain */
 struct pmucal_pd {
@@ -19,7 +18,6 @@ struct pmucal_pd {
 	u32 num_off;
 	u32 num_status;
 	u32 need_smc;
-	struct pmucal_dbg_info *dbg;
 };
 
 #define PMUCAL_PD_DESC(_pd_id, _name, _on, _save, _off, _status)	\

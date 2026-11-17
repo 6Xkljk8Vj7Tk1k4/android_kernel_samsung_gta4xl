@@ -41,8 +41,6 @@ extern int cal_cpu_status(unsigned int cpu);
 extern int cal_cluster_enable(unsigned int cluster);
 extern int cal_cluster_disable(unsigned int cluster);
 extern int cal_cluster_status(unsigned int cluster);
-extern int cal_cluster_req_emulation(unsigned int cluster, bool en);
-extern int cal_is_lastcore_detecting(unsigned int cpu);
 
 extern unsigned int cal_dfs_get(char *name);
 extern unsigned long cal_dfs_get_max_freq(unsigned int id);
@@ -95,10 +93,11 @@ extern int cal_asv_get_ids_info(unsigned int id);
 extern int cal_asv_get_grp(unsigned int id);
 extern int cal_asv_get_tablever(void);
 
-extern int cal_cp_init(void);
+static inline int cal_is_lastcore_detecting(unsigned int cpu) { return 0; }
+extern void cal_cp_init(void);
 extern int cal_cp_status(void);
-extern int cal_cp_reset_assert(void);
-extern int cal_cp_reset_release(void);
+extern void cal_cp_reset_assert(void);
+extern void cal_cp_reset_release(void);
 extern void cal_cp_active_clear(void);
 extern void cal_cp_reset_req_clear(void);
 extern void cal_cp_enable_dump_pc_no_pg(void);
@@ -107,9 +106,8 @@ extern void cal_cp_disable_dump_pc_no_pg(void);
 extern void cal_gnss_init(void);
 extern int cal_gnss_status(void);
 extern void cal_gnss_reset_assert(void);
-extern void cal_gnss_reset_release(void);
+extern int cal_gnss_reset_release(void);
 extern void cal_gnss_reset_req_clear(void);
-extern void cal_gnss_active_clear(void);
 
 extern int cal_init(void);
 extern int cal_if_init(void *);

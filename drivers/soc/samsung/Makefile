@@ -28,7 +28,14 @@ obj-$(CONFIG_ECT)               += ect_parser.o
 obj-$(CONFIG_USI_V2) += usi_v2.o
 
 # reboot
+# the 9610 uses the "exynos,reboot" driver of the 4.14 tree (reboot reasons S-Boot of this
+# device understands); the other SoCs here use "exynos,reboot-v1"
+ifeq ($(CONFIG_SOC_EXYNOS9610),y)
+obj-$(CONFIG_EXYNOS_REBOOT)	+= exynos-reboot-9610.o
+obj-y				+= exynos-fsys0-tcxo.o
+else
 obj-$(CONFIG_EXYNOS_REBOOT)	+= exynos-reboot.o
+endif
 
 # DEBUG
 obj-$(CONFIG_EXYNOS_DEBUG)       += debug/

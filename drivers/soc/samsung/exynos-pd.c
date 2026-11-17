@@ -17,6 +17,13 @@
 #include <soc/samsung/cal-if.h>
 
 #include <linux/sec_debug.h>
+
+#ifdef CONFIG_SND_SOC_SAMSUNG_ABOX
+extern void abox_poweroff(void);
+#else
+static inline void abox_poweroff(void) {}
+#endif
+
 struct exynos_pm_domain *exynos_pd_lookup_name(const char *domain_name)
 {
 	struct exynos_pm_domain *exypd = NULL;
@@ -88,6 +95,10 @@ static void exynos_pd_power_off_pre(struct exynos_pm_domain *pd)
 		exynos_g3d_power_down_noti_apm();
 	}
 #endif /* CONFIG_EXYNOS_CL_DVFS_G3D */
+	/* The 4.14 ABOX driver relies on this to stop the DSP before its domain goes down. */
+	if (!strcmp(pd->name, "pd-dispaud"))
+		abox_poweroff();
+
 	if (cal_pd_status(pd->cal_pdid)) {
 #if defined(CONFIG_EXYNOS_BCM)
 		if (pd->bcm)
@@ -279,6 +290,16 @@ static int exynos_pd_genpd_init(struct exynos_pm_domain *pd, int state)
 	pd->genpd.name = pd->name;
 	pd->genpd.power_off = exynos_pd_power_off;
 	pd->genpd.power_on = exynos_pd_power_on;
+
+#if defined(CONFIG_SOC_EXYNOS9610) && !defined(CONFIG_EXYNOS_DPU20)
+	/*
+	 * Without the dpu20 display driver nobody claims this domain, while the bootloader has
+	 * left the display running: genpd's "power off unused" then times out in the PMUCAL
+	 * off sequence, which ends in an emergency watchdog reset. Keep the domain on.
+	 */
+	if (state && !strcmp(pd->name, "pd-dispaud"))
+		pd->genpd.flags |= GENPD_FLAG_ALWAYS_ON;
+#endif
 
 	/* pd power on/off latency is less than 1ms */
 	pm_genpd_init(&pd->genpd, NULL, state ? false : true);

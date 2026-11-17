@@ -14,19 +14,20 @@
 #include <soc/samsung/acpm_mfd.h>
 #include <soc/samsung/acpm_ipc_ctrl.h>
 
-struct device_node *acpm_mfd_node;
+extern struct device_node *acpm_mfd_node;
+static DEFINE_MUTEX(acpm_mfd_lock);
 
-int exynos_acpm_read_reg(u8 channel, u16 type, u8 reg, u8 *dest)
+int exynos_acpm_read_reg(u16 type, u8 reg, u8 *dest)
 {
 	unsigned int channel_num, size;
 	struct ipc_config config;
 	unsigned int command[4] = {0,};
 	int ret = 0;
 
+	mutex_lock(&acpm_mfd_lock);
 	if (!acpm_ipc_request_channel(acpm_mfd_node, NULL, &channel_num, &size)) {
 		config.cmd = command;
-		config.cmd[0] = set_protocol(type, TYPE) | set_protocol(reg, REG) |
-				set_protocol(channel, CHANNEL);
+		config.cmd[0] = set_protocol(type, TYPE) | set_protocol(reg, REG);
 		config.cmd[1] = set_protocol(FUNC_READ, FUNC);
 		config.response = true;
 		config.indirection = false;
@@ -37,14 +38,14 @@ int exynos_acpm_read_reg(u8 channel, u16 type, u8 reg, u8 *dest)
 		ret = acpm_ipc_send_data(channel_num, &config);
 		if (ret) {
 			pr_err(ACPM_MFD_PREFIX "%s - acpm_ipc_send_data fail.\n", __func__);
-			return ret;
+			goto err;
 		}
 
 		*dest = read_protocol(config.cmd[1], DEST);
 		ret = read_protocol(config.cmd[1], RETURN);
 		if (ret) {
 			pr_err(ACPM_MFD_PREFIX "%s - APM's speedy_rx fail.\n", __func__);
-			return ret;
+			goto err;
 		}
 
 		ACPM_MFD_PRINT("%s - data = 0x%02x ret = 0x%02x\n",
@@ -56,21 +57,22 @@ int exynos_acpm_read_reg(u8 channel, u16 type, u8 reg, u8 *dest)
 				__func__, channel_num, size);
 		ret = -EBUSY;
 	}
-
+err:
+	mutex_unlock(&acpm_mfd_lock);
 	return ret;
 }
 
-int exynos_acpm_bulk_read(u8 channel, u16 type, u8 reg, int count, u8 *buf)
+int exynos_acpm_bulk_read(u16 type, u8 reg, int count, u8 *buf)
 {
 	unsigned int channel_num, size;
 	struct ipc_config config;
 	unsigned int command[4] = {0,};
 	int i, ret = 0;
 
+	mutex_lock(&acpm_mfd_lock);
 	if (!acpm_ipc_request_channel(acpm_mfd_node, NULL, &channel_num, &size)) {
 		config.cmd = command;
-		config.cmd[0] = set_protocol(type, TYPE) | set_protocol(reg, REG) |
-				set_protocol(channel, CHANNEL);
+		config.cmd[0] = set_protocol(type, TYPE) | set_protocol(reg, REG);
 		config.cmd[1] = set_protocol(FUNC_BULK_READ, FUNC) | set_protocol(count, CNT);
 		config.response = true;
 		config.indirection = false;
@@ -81,13 +83,13 @@ int exynos_acpm_bulk_read(u8 channel, u16 type, u8 reg, int count, u8 *buf)
 		ret = acpm_ipc_send_data(channel_num, &config);
 		if (ret) {
 			pr_err(ACPM_MFD_PREFIX "%s - acpm_ipc_send_data fail.\n", __func__);
-			return ret;
+			goto err;
 		}
 
 		ret = read_protocol(config.cmd[1], RETURN);
 		if (ret) {
 			pr_err(ACPM_MFD_PREFIX "%s - APM's speedy_rx fail.\n", __func__);
-			return ret;
+			goto err;
 		}
 
 		for (i = 0; i < count; i++) {
@@ -104,20 +106,22 @@ int exynos_acpm_bulk_read(u8 channel, u16 type, u8 reg, int count, u8 *buf)
 		ret = -EBUSY;
 	}
 
+err:
+	mutex_unlock(&acpm_mfd_lock);
 	return ret;
 }
 
-int exynos_acpm_write_reg(u8 channel, u16 type, u8 reg, u8 value)
+int exynos_acpm_write_reg(u16 type, u8 reg, u8 value)
 {
 	unsigned int channel_num, size;
 	struct ipc_config config;
 	unsigned int command[4] = {0,};
 	int ret = 0;
 
+	mutex_lock(&acpm_mfd_lock);
 	if (!acpm_ipc_request_channel(acpm_mfd_node, NULL, &channel_num, &size)) {
 		config.cmd = command;
-		config.cmd[0] = set_protocol(type, TYPE) | set_protocol(reg, REG) |
-				set_protocol(channel, CHANNEL);;
+		config.cmd[0] = set_protocol(type, TYPE) | set_protocol(reg, REG);
 		config.cmd[1] = set_protocol(FUNC_WRITE, FUNC) | set_protocol(value, WRITE_VAL);
 		config.response = true;
 		config.indirection = false;
@@ -128,13 +132,13 @@ int exynos_acpm_write_reg(u8 channel, u16 type, u8 reg, u8 value)
 		ret = acpm_ipc_send_data(channel_num, &config);
 		if (ret) {
 			pr_err(ACPM_MFD_PREFIX "%s - acpm_ipc_send_data fail.\n", __func__);
-			return ret;
+			goto err;
 		}
 
 		ret = read_protocol(config.cmd[1], RETURN);
 		if (ret) {
 			pr_err(ACPM_MFD_PREFIX "%s - APM's speedy_tx fail.\n", __func__);
-			return ret;
+			goto err;
 		}
 
 		ACPM_MFD_PRINT("%s - read(ret) val: 0x%02x\n", __func__, ret);
@@ -146,10 +150,12 @@ int exynos_acpm_write_reg(u8 channel, u16 type, u8 reg, u8 value)
 		ret = -EBUSY;
 	}
 
+err:
+	mutex_unlock(&acpm_mfd_lock);
 	return ret;
 }
 
-int exynos_acpm_bulk_write(u8 channel, u16 type, u8 reg, int count, u8 *buf)
+int exynos_acpm_bulk_write(u16 type, u8 reg, int count, u8 *buf)
 {
 	unsigned int channel_num, size;
 	struct ipc_config config;
@@ -157,10 +163,10 @@ int exynos_acpm_bulk_write(u8 channel, u16 type, u8 reg, int count, u8 *buf)
 	int ret = 0;
 	int i;
 
+	mutex_lock(&acpm_mfd_lock);
 	if (!acpm_ipc_request_channel(acpm_mfd_node, NULL, &channel_num, &size)) {
 		config.cmd = command;
-		config.cmd[0] = set_protocol(type, TYPE) | set_protocol(reg, REG) |
-				set_protocol(channel, CHANNEL);
+		config.cmd[0] = set_protocol(type, TYPE) | set_protocol(reg, REG);
 		config.cmd[1] = set_protocol(FUNC_BULK_WRITE, FUNC) | set_protocol(count, CNT);
 		config.response = true;
 		config.indirection = false;
@@ -178,13 +184,13 @@ int exynos_acpm_bulk_write(u8 channel, u16 type, u8 reg, int count, u8 *buf)
 		ret = acpm_ipc_send_data(channel_num, &config);
 		if (ret) {
 			pr_err(ACPM_MFD_PREFIX "%s - acpm_ipc_send_data fail.\n", __func__);
-			return ret;
+			goto err;
 		}
 
 		ret = read_protocol(config.cmd[1], RETURN);
 		if (ret) {
 			pr_err(ACPM_MFD_PREFIX "%s - APM's speedy_tx fail.\n", __func__);
-			return ret;
+			goto err;
 		}
 
 		acpm_ipc_release_channel(acpm_mfd_node, channel_num);
@@ -194,20 +200,22 @@ int exynos_acpm_bulk_write(u8 channel, u16 type, u8 reg, int count, u8 *buf)
 		ret = -EBUSY;
 	}
 
+err:
+	mutex_unlock(&acpm_mfd_lock);
 	return ret;
 }
 
-int exynos_acpm_update_reg(u8 channel, u16 type, u8 reg, u8 value, u8 mask)
+int exynos_acpm_update_reg(u16 type, u8 reg, u8 value, u8 mask)
 {
 	unsigned int channel_num, size;
 	struct ipc_config config;
 	unsigned int command[4] = {0,};
 	int ret = 0;
 
+	mutex_lock(&acpm_mfd_lock);
 	if (!acpm_ipc_request_channel(acpm_mfd_node, NULL, &channel_num, &size)) {
 		config.cmd = command;
-		config.cmd[0] = set_protocol(type, TYPE) | set_protocol(reg, REG) |
-				set_protocol(channel, CHANNEL);
+		config.cmd[0] = set_protocol(type, TYPE) | set_protocol(reg, REG);
 		config.cmd[1] = set_protocol(FUNC_UPDATE, FUNC)
 				| set_protocol(value, UPDATE_VAL)
 				| set_protocol(mask, UPDATE_MASK);
@@ -220,7 +228,7 @@ int exynos_acpm_update_reg(u8 channel, u16 type, u8 reg, u8 value, u8 mask)
 		ret = acpm_ipc_send_data(channel_num, &config);
 		if (ret) {
 			pr_err(ACPM_MFD_PREFIX "%s - acpm_ipc_send_data fail.\n", __func__);
-			return ret;
+			goto err;
 		}
 
 		ret = read_protocol(config.cmd[1], RETURN);
@@ -229,7 +237,7 @@ int exynos_acpm_update_reg(u8 channel, u16 type, u8 reg, u8 value, u8 mask)
 				pr_err(ACPM_MFD_PREFIX "%s - APM's speedy_rx fail.\n", __func__);
 			else if (ret == 2)
 				pr_err(ACPM_MFD_PREFIX "%s - APM's speedy_tx fail.\n", __func__);
-			return ret;
+			goto err;
 		}
 
 		acpm_ipc_release_channel(acpm_mfd_node, channel_num);
@@ -239,5 +247,7 @@ int exynos_acpm_update_reg(u8 channel, u16 type, u8 reg, u8 value, u8 mask)
 		ret = -EBUSY;
 	}
 
+err:
+	mutex_unlock(&acpm_mfd_lock);
 	return ret;
 }

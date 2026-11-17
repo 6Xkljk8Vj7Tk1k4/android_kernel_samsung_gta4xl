@@ -28,9 +28,7 @@
 
 static int ipc_done;
 static unsigned long long ipc_time_start;
-#ifdef CONFIG_DEBUG_FS
 static unsigned long long ipc_time_end;
-#endif
 
 static struct acpm_info *exynos_acpm;
 
@@ -80,8 +78,7 @@ static int firmware_update(struct device *dev, void *fw_base, const char *fw_nam
 
 	dev_info(dev, "Loading %s firmware ... ", fw_name);
 	err = request_firmware(&fw_entry, fw_name, dev);
-	if (err || !fw_entry) {
-		release_firmware(fw_entry);
+	if (err < 0) {
 		dev_err(dev, "firmware request FAIL \n");
 		return err;
 	}
@@ -102,10 +99,10 @@ static int plugins_init(void)
 	unsigned int plugin_id;
 	char name[50];
 	const char *fw_name = NULL;
-	void __iomem *fw_base_addr;
+	void __iomem *fw_base_addr = 0, *dvfs_base_addr = 0;
 	struct device_node *node, *child;
 	const __be32 *prop;
-	unsigned int offset;
+	unsigned int offset = 0;
 
 	plugins = (struct plugin *)(acpm_srambase + acpm_initdata->plugins);
 
@@ -146,7 +143,13 @@ static int plugins_init(void)
 				strncpy(name, fw_name, 50);
 				name[49]= 0;
 
-				firmware_update(exynos_acpm->dev, fw_base_addr, name);
+				/* never attach a plug-in whose code was not loaded: the ACPM firmware
+				 * would jump into whatever the SRAM holds (empty after a cold reset) */
+				if (firmware_update(exynos_acpm->dev, fw_base_addr, name) < 0) {
+					dev_err(exynos_acpm->dev, "plugin %d not attached: no firmware\n",
+							plugins[i].id);
+					continue;
+				}
 			}
 
 			ret = handle_dynamic_plugin(exynos_acpm->dev->of_node, plugins[i].id, plugins[i].stay_attached);
@@ -154,29 +157,25 @@ static int plugins_init(void)
 				dev_err(exynos_acpm->dev, "plugin attach/detach:%u fail! plugin_id:%d, ret:%d",
 						plugins[i].stay_attached, plugins[i].id, ret);
 
-			if (fw_name && strstr(fw_name, "dvfs"))
-				fvmap_init(fw_base_addr + plugins[i].size);
-
 		} else if (plugins[i].is_attached == 1 && plugins[i].stay_attached == 1) {
 			fw_name = (const char *)(acpm_srambase + plugins[i].fw_name);
 
 			if (plugins[i].fw_name && fw_name &&
 					(strstr(fw_name, "DVFS") || strstr(fw_name, "dvfs"))) {
 
-				fw_base_addr = acpm_srambase + (plugins[i].base_addr & ~0x1);
+				dvfs_base_addr = acpm_srambase + (plugins[i].base_addr & ~0x1);
 				prop = of_get_property(exynos_acpm->dev->of_node, "fvmap_offset", &len);
-				if (prop) {
+				if (prop)
 					offset = be32_to_cpup(prop);
-					fvmap_init(fw_base_addr + offset);
-				}
 			}
 		}
 	}
 
+	fvmap_init(dvfs_base_addr + offset);
+
 	return ret;
 }
 
-#ifdef CONFIG_DEBUG_FS
 static int debug_log_level_get(void *data, unsigned long long *val)
 {
 
@@ -203,9 +202,7 @@ static int debug_ipc_loopback_test_get(void *data, unsigned long long *val)
 	config.response = true;
 	config.indirection = false;
 
-	ipc_time_start = sched_clock();
 	ret = acpm_send_data(exynos_acpm->dev->of_node, 3, &config);
-	ipc_time_end = sched_clock();
 
 	if (!ret)
 		*val = ipc_time_end - ipc_time_start;
@@ -223,10 +220,24 @@ static int debug_ipc_loopback_test_set(void *data, unsigned long long val)
 	return 0;
 }
 
+static int debug_mifdn_count_get(void *data, unsigned long long *val)
+{
+	*val = acpm_get_mifdn_count();
+
+	return 0;
+}
+
+static int debug_mifdn_count_set(void *data, unsigned long long val)
+{
+	return 0;
+}
+
 DEFINE_SIMPLE_ATTRIBUTE(debug_log_level_fops,
 		debug_log_level_get, debug_log_level_set, "%llu\n");
 DEFINE_SIMPLE_ATTRIBUTE(debug_ipc_loopback_test_fops,
 		debug_ipc_loopback_test_get, debug_ipc_loopback_test_set, "%llu\n");
+DEFINE_SIMPLE_ATTRIBUTE(debug_mifdn_count_fops,
+		debug_mifdn_count_get, debug_mifdn_count_set, "%llu\n");
 
 static void acpm_debugfs_init(struct acpm_info *acpm)
 {
@@ -235,8 +246,8 @@ static void acpm_debugfs_init(struct acpm_info *acpm)
 	den = debugfs_create_dir("acpm_framework", NULL);
 	debugfs_create_file("ipc_loopback_test", 0644, den, acpm, &debug_ipc_loopback_test_fops);
 	debugfs_create_file("log_level", 0644, den, NULL, &debug_log_level_fops);
+	debugfs_create_file("mifdn_count", 0644, den, NULL, &debug_mifdn_count_fops);
 }
-#endif
 
 void *memcpy_align_4(void *dest, const void *src, unsigned int n)
 {
@@ -281,11 +292,6 @@ void acpm_enter_wfi(void)
 	}
 }
 
-u32 exynos_get_peri_timer_icvra(void)
-{
-       return (EXYNOS_PERI_TIMER_MAX - __raw_readl(exynos_acpm->timer_base + EXYNOS_TIMER_APM_TCVR)) & EXYNOS_PERI_TIMER_MAX;
-}
-
 void exynos_acpm_timer_clear(void)
 {
 	writel(exynos_acpm->timer_cnt, exynos_acpm->timer_base + EXYNOS_TIMER_APM_TCVR);
@@ -300,25 +306,8 @@ void exynos_acpm_reboot(void)
 	soc_id = exynos_soc_info.product_id;
 	revision = exynos_soc_info.revision;
 
-	acpm_enter_wfi();
-}
-
-void exynos_acpm_ps_hold_down(void)
-{
-	struct ipc_config config;
-	int ret = 0;
-	unsigned int cmd[4] = {0, };
-
-	acpm_ipc_set_waiting_mode(BUSY_WAIT);
-
-	config.cmd = cmd;
-	config.response = true;
-	config.indirection = false;
-	config.cmd[0] = (1 << ACPM_IPC_PROTOCOL_STOP) | (ACPM_IPC_PS_HOLD_DOWN);
-
-	ret = acpm_send_data(exynos_acpm->dev->of_node, ACPM_IPC_PROTOCOL_STOP, &config);
-
-	pr_err("PS HOLD down fail. (ret: %d)\n", ret);
+	if (!(soc_id == EXYNOS9810_SOC_ID && revision < EXYNOS_MAIN_REV_1))
+		acpm_enter_wfi();
 }
 
 static int acpm_send_data(struct device_node *node, unsigned int check_id,
@@ -402,9 +391,7 @@ static int acpm_probe(struct platform_device *pdev)
 
 	exynos_acpm = acpm;
 
-#ifdef CONFIG_DEBUG_FS
 	acpm_debugfs_init(acpm);
-#endif
 
 	exynos_acpm_timer_clear();
 	return ret;

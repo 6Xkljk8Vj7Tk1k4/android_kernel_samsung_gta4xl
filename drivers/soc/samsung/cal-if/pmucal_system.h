@@ -1,7 +1,6 @@
 #ifndef __PMUCAL_SYSTEM_H__
 #define __PMUCAL_SYSTEM_H__
 #include "pmucal_common.h"
-#include "pmucal_dbg.h"
 
 struct pmucal_lpm {
 	u32 id;
@@ -13,7 +12,6 @@ struct pmucal_lpm {
 	u32 num_save;
 	u32 num_exit;
 	u32 num_early_wakeup;
-	struct pmucal_dbg_info *dbg;
 };
 
 /* Chip-independent enumeration for low-power mode
@@ -32,8 +30,7 @@ enum sys_powerdown {
 	SYS_SLEEP_VTS_ON,
 	SYS_SLEEP_AUD_ON,
 	SYS_FAPO,
-	SYS_SLEEP_USBL2,
-	SYS_SLEEP_HSI2ON,
+	SYS_SLEEP_USB_ON,
 	NUM_SYS_POWERDOWN,
 };
 
@@ -47,6 +44,7 @@ extern struct pmucal_seq pmucal_lpm_init[];
 extern struct pmucal_lpm pmucal_lpm_list[];
 extern unsigned int pmucal_lpm_init_size;
 extern unsigned int pmucal_lpm_list_size;
-
+#ifdef CONFIG_FLEXPMU
 extern unsigned int pmucal_sys_powermode[];
+#endif
 #endif

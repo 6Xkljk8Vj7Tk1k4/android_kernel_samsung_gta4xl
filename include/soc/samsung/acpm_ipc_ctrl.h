@@ -23,18 +23,14 @@ struct ipc_config {
 #define ACPM_IPC_PROTOCOL_STOP			(22)
 #define ACPM_IPC_PROTOCOL_SEQ_NUM		(16)
 
-#define ACPM_IPC_PS_HOLD_DOWN			(0xDD)
-
 #ifdef CONFIG_EXYNOS_ACPM
 unsigned int acpm_ipc_request_channel(struct device_node *np, ipc_callback handler,
 		unsigned int *id, unsigned int *size);
 unsigned int acpm_ipc_release_channel(struct device_node *np, unsigned int channel_id);
 int acpm_ipc_send_data(unsigned int channel_id, struct ipc_config *cfg);
 int acpm_ipc_send_data_sync(unsigned int channel_id, struct ipc_config *cfg);
-int acpm_ipc_send_data_lazy(unsigned int channel_id, struct ipc_config *cfg);
 int acpm_ipc_set_ch_mode(struct device_node *np, bool polling);
 void exynos_acpm_reboot(void);
-void exynos_acpm_ps_hold_down(void);
 void acpm_stop_log(void);
 #else
 
@@ -65,11 +61,6 @@ static inline int acpm_ipc_set_ch_mode(struct device_node *np, bool polling)
 }
 
 static inline void exynos_acpm_reboot(void)
-{
-	return;
-}
-
-static inline void exynos_acpm_ps_hold_down(void)
 {
 	return;
 }

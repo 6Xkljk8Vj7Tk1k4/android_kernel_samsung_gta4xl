@@ -11,8 +11,6 @@
 
 #define ECT_DUMMY_SFR	(0xFFFFFFFF)
 unsigned int asv_table_ver = 0;
-unsigned int main_rev;
-unsigned int sub_rev;
 
 static struct vclk_lut *get_lut(struct vclk *vclk, unsigned int rate)
 {
@@ -464,6 +462,19 @@ static int vclk_get_dfs_info(struct vclk *vclk)
 	if (!vclk->list)
 		return -EVCLKNOMEM;
 
+	for (i = 0; i < dvfs_domain->num_of_clock; i++) {
+		if (dvfs_domain->list_sfr[i] == ECT_DUMMY_SFR) {
+			vclk->list[i] = INVALID_CLK_ID;
+			continue;
+		}
+
+		vclk->list[i] = cmucal_get_id_by_addr(dvfs_domain->list_sfr[i]);
+		if (vclk->list[i] == INVALID_CLK_ID) {
+			ret = -EVCLKINVAL;
+			goto err_nomem1;
+		}
+	}
+
 	vclk->lut = kzalloc(sizeof(struct vclk_lut) * vclk->num_rates,
 			    GFP_KERNEL);
 	if (!vclk->lut) {
@@ -676,7 +687,6 @@ int __init vclk_initialize(void)
 	ra_init();
 
 	asv_table_ver = asv_table_init();
-	id_get_rev(&main_rev, &sub_rev);
 
 	vclk_bind();
 

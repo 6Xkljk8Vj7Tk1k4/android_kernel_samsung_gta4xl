@@ -106,27 +106,34 @@ static void *exynos_seclog_request_region(unsigned long addr,
 
 static void exynos_seclog_worker(struct work_struct *work)
 {
-	struct log_header_info *v_log_arr = 0;
+	struct log_header_info *v_log_h = NULL;
+	char *v_log = NULL;
 	unsigned long v_log_addr = 0;
 	unsigned int cpu = 0;
-	unsigned int tmp_read_cnt = 0;
-	unsigned int tmp_write_cnt = 0;
+
 	pr_debug("%s: Start seclog_worker\n", __func__);
 
 	/* Print log message in a message buffer */
 	for (cpu = 0; cpu < NR_CPUS; cpu++) {
-		v_log_addr = SECLOG_PHYS_TO_VIRT(sec_log[cpu]->initial_log_addr);
-		v_log_arr = (struct log_header_info *)v_log_addr;
-		tmp_read_cnt = sec_log[cpu]->log_read_cnt;
-		tmp_write_cnt = sec_log[cpu]->log_write_cnt;
+		v_log_addr = SECLOG_PHYS_TO_VIRT(sec_log[cpu]->start_log_addr);
 
-		while (tmp_read_cnt != tmp_write_cnt) {
+		while (sec_log[cpu]->log_read_cnt != sec_log[cpu]->log_write_cnt) {
+			/* Check the log message is reached the end of log buffer */
+			if (sec_log[cpu]->log_return_cnt) {
+				if (sec_log[cpu]->log_read_cnt
+					== sec_log[cpu]->log_return_cnt) {
+					sec_log[cpu]->log_return_cnt = 0;
+					v_log_addr = SECLOG_PHYS_TO_VIRT(sec_log[cpu]->initial_log_addr);
+				}
+			}
 
 			/* For debug */
 			pr_debug("[SECLOG_DEBUG C%d] read_cnt[%d]\n",
 					cpu, sec_log[cpu]->log_read_cnt);
 			pr_debug("[SECLOG_DEBUG C%d] write_cnt[%d]\n",
 					cpu, sec_log[cpu]->log_write_cnt);
+			pr_debug("[SECLOG_DEBUG C%d] return_cnt[%d]\n",
+					cpu, sec_log[cpu]->log_return_cnt);
 			pr_debug("[SECLOG_DEBUG C%d] v_log_addr[%#lx]\n",
 					cpu, v_log_addr);
 			pr_debug("[SECLOG_DEBUG C%d] p_log_addr[%#lx]\n",
@@ -136,28 +143,30 @@ static void exynos_seclog_worker(struct work_struct *work)
 					+ ldata.phys_addr);
 
 			/* Set log address and log's header address */
+			v_log_h = (struct log_header_info *)v_log_addr;
+			v_log = (char *)v_log_addr + sizeof(struct log_header_info);
+
 			/* For debug */
-			pr_debug("[SECLOG_DEBUG C%d] v_log_addr[%#lx]\n",
-					cpu, (unsigned long)v_log_addr);
-			pr_debug("[SECLOG_DEBUG C%d] v_log_arr[%#lx]\n",
-					cpu, (unsigned long)v_log_arr);
+			pr_debug("[SECLOG_DEBUG C%d] v_log_h[%#lx]\n",
+					cpu, (unsigned long)v_log_h);
+			pr_debug("[SECLOG_DEBUG C%d] v_log[%#lx]\n",
+					cpu, (unsigned long)v_log);
+			pr_debug("[SECLOG_DEBUG C%d] log_len = %d\n",
+					cpu, v_log_h->log_len);
+
 			/* Print logs from SWd */
 			pr_info("[SECLOG C%d] [%06d.%06d] %s",
 				cpu,
-				v_log_arr[tmp_read_cnt].tv_sec,
-				v_log_arr[tmp_read_cnt].tv_usec,
-				v_log_arr[tmp_read_cnt].buf);
+				v_log_h->tv_sec,
+				v_log_h->tv_usec,
+				v_log);
+
+			/* v_log_addr is moved to next log */
+			v_log_addr += (sizeof(struct log_header_info) + v_log_h->log_len);
+			CHECK_AND_ALIGN_4BYTES(v_log_addr);
 
 			/* Increase read count */
-			tmp_read_cnt = (tmp_read_cnt + 1) % MAX_LOG_COUNT;
-		}
-		sec_log[cpu]->log_read_cnt = tmp_read_cnt;
-		if(sec_log[cpu]->log_buffer_full_flag) {
-			pr_info("[SECLOG Error C%d] Sec_log is full!!", cpu);
-			pr_info("[SECLOG Error C%d] %d Messages blocked...",
-					cpu, sec_log[cpu]->blocked_log_cnt);
-			sec_log[cpu]->blocked_log_cnt = 0;
-			sec_log[cpu]->log_buffer_full_flag = 0;
+			(sec_log[cpu]->log_read_cnt)++;
 		}
 	}
 }
@@ -172,6 +181,7 @@ static irqreturn_t exynos_seclog_irq_handler(int irq, void *dev_id)
 		/* Skip all log messages */
 		for (cpu = 0; cpu < NR_CPUS; cpu++) {
 			sec_log[cpu]->log_read_cnt = sec_log[cpu]->log_write_cnt;
+			sec_log[cpu]->log_return_cnt = 0;
 		}
 	}
 
@@ -244,13 +254,11 @@ static int exynos_seclog_probe(struct platform_device *pdev)
 	INIT_WORK(&slog_ctx.work, exynos_seclog_worker);
 	slog_ctx.enabled = true;
 
-#ifdef CONFIG_DEBUG_FS
 	/* Create debugfs for Secure log */
 	slog_ctx.debug_dir = debugfs_create_dir("seclog", NULL);
 	debugfs_create_bool("seclog_debug", 0600, slog_ctx.debug_dir,
 			&slog_ctx.enabled);
 
-#endif
 	/* Send message buffer information to EL3 Monitor */
 	dev_dbg(&pdev->dev,
 		"SMC arguments(%#x, %#lx, %#lx, %ld)\n",

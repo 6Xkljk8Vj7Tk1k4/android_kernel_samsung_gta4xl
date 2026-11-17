@@ -558,6 +558,9 @@ static int __init exynos_isp_cooling_init(void)
 	}
 
 	np = of_find_node_by_name(NULL, "exynos_isp_thermal");
+	/* the Exynos 9610 DTS hangs the ISP cooling cells on the camera node, as 4.14 expects */
+	if (!np)
+		np = of_find_node_by_name(NULL, "fimc_is");
 
 	if (!np) {
 		pr_err("Fail to find device node\n");

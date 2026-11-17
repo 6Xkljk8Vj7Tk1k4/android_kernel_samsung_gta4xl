@@ -25,9 +25,9 @@
 #include <linux/cpu_cooling.h>
 #include <linux/gpu_cooling.h>
 #include <linux/isp_cooling.h>
-#include <linux/pm_qos.h>
 #include <dt-bindings/thermal/thermal_exynos.h>
 
+#define NR_HOTPLUG_CPUS	4
 #define MCELSIUS        1000
 
 enum soc_type {
@@ -35,9 +35,7 @@ enum soc_type {
 	SOC_ARCH_EXYNOS8895 = 2,
 	SOC_ARCH_EXYNOS7872,
 	SOC_ARCH_EXYNOS9810,
-	SOC_ARCH_EXYNOS9820,
-	SOC_ARCH_EXYNOS9630,
-	SOC_ARCH_EXYNOS3830,
+	SOC_ARCH_EXYNOS9610,
 };
 
 /**
@@ -50,6 +48,7 @@ enum soc_type {
  * @noise_cancel_mode: noise cancellation mode
  *	000, 100, 101, 110 and 111 can be different modes
  * @type: determines the type of SOC
+ * @efuse_value: platform defined fuse value
  * @default_temp_offset: default temperature offset in case of no trimming
  * @cal_type: calibration type for temperature
  *
@@ -60,6 +59,7 @@ struct exynos_tmu_platform_data {
 	u8 reference_voltage;
 	u8 noise_cancel_mode;
 
+	u32 efuse_value;
 	u8 first_point_trim;
 	u8 second_point_trim;
 	u8 default_temp_offset;
@@ -114,8 +114,6 @@ struct sensor_info {
  * @tmu_read: SoC specific TMU temperature read method
  * @tmu_set_emulation: SoC specific TMU emulation setting method
  * @tmu_clear_irqs: SoC specific TMU interrupts clearing method
- * @first_boot: Read OTP fused value only when boot time
- * @buf_vref, buf_slope, avg_mode: OTP value for read once and save
  */
 struct exynos_tmu_data {
 	int id;
@@ -124,6 +122,8 @@ struct exynos_tmu_data {
 	int hotplug_in_threshold;
 	int hotplug_out_threshold;
 	int limited_frequency;
+	int limited_threshold;
+	int limited_threshold_release;
 	struct exynos_tmu_platform_data *pdata;
 	void __iomem *base;
 	int irq;
@@ -144,10 +144,7 @@ struct exynos_tmu_data {
 	char tmu_name[THERMAL_NAME_LENGTH + 1];
 	struct device_node *np;
 	int balance_offset;
-	bool first_boot;
-	unsigned int buf_vref;
-	unsigned int buf_slope;
-	unsigned int avg_mode;
+	struct mutex hotplug_lock;
 
 	ktime_t last_thermal_status_updated;
 	ktime_t thermal_status[3];
@@ -158,8 +155,7 @@ struct exynos_tmu_data {
 	void (*tmu_set_emulation)(struct exynos_tmu_data *data, int temp);
 	void (*tmu_clear_irqs)(struct exynos_tmu_data *data);
 };
-
-extern int exynos_build_static_power_table(struct device_node *np, int **var_table,
+int exynos_build_static_power_table(struct device_node *np, int **var_table,
 		unsigned int *var_volt_size, unsigned int *var_temp_size);
 
 #endif /* _EXYNOS_TMU_H */

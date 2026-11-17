@@ -364,6 +364,23 @@ config SOC_EXYNOS9830_EVT0
 	default n
 	bool "Samsung EXYNOS9830 EVT0"
 
+config SOC_EXYNOS9610
+	bool "Samsung EXYNOS9610"
+	select SOC_SAMSUNG
+	select ARCH_EXYNOS
+	select ARCH_HAS_CPUFREQ
+	select HAVE_S3C2410_I2C if I2C
+	select HAVE_S3C2410_WATCHDOG if WATCHDOG
+	select HAVE_S3C_RTC if RTC_CLASS
+	select ARCH_SUPPORTS_MSI
+	select ARM_AMBA
+	select CLKSRC_OF
+	select USE_OF
+	select COMMON_CLK_SAMSUNG
+	select CLKSRC_EXYNOS_MCT
+	select PINCTRL
+	select SAMSUNG_DMADEV
+
 config SOC_EXYNOS3830
 	bool "Samsung EXYNOS3830"
 	select SOC_SAMSUNG

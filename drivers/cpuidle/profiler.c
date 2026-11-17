@@ -9,17 +9,13 @@
  */
 
 #include <linux/device.h>
+#include <linux/kdev_t.h>
 #include <linux/kobject.h>
 #include <linux/cpuidle.h>
 #include <linux/slab.h>
-#include <linux/kdev_t.h>
-
-#include <soc/samsung/exynos-cpupm.h>
-#include <soc/samsung/exynos_perf_cpuidle.h>
 
 /* whether profiling has started */
 static bool profile_started;
-static bool auto_profile_started;
 
 /*
  * Represents statistic of idle state.
@@ -49,7 +45,7 @@ struct cpuidle_stats {
  */
 struct cpu_idle_state {
 	/* description of idle state */
-	char			desc[DESC_LEN];
+	char 			desc[DESC_LEN];
 
 	/* idle state statstics for each cpu */
 	struct cpuidle_stats	stats[NR_CPUS];
@@ -82,11 +78,8 @@ struct group_idle_state {
 #define MAX_GROUP_IDLE_STATE	5
 
 /* group idle state list and length of group idle state list */
-static struct group_idle_state *group_idle_state[MAX_GROUP_IDLE_STATE];
+static struct group_idle_state * group_idle_state[MAX_GROUP_IDLE_STATE];
 static int group_idle_state_count;
-
-/* delayed_work for cpuidle auto profiling */
-struct delayed_work auto_profile_work;
 
 /************************************************************************
  *                              Profiling                               *
@@ -132,7 +125,6 @@ void cpuidle_profile_cpu_idle_enter(int cpu, int index)
 		return;
 
 	idle_enter(&cpu_idle_state[index].stats[cpu]);
-	exynos_perf_cpu_idle_enter(cpu, index);
 }
 
 void cpuidle_profile_cpu_idle_exit(int cpu, int index, int cancel)
@@ -140,7 +132,6 @@ void cpuidle_profile_cpu_idle_exit(int cpu, int index, int cancel)
 	if (!profile_started)
 		return;
 
-	exynos_perf_cpu_idle_exit(cpu, index, cancel);
 	idle_exit(&cpu_idle_state[index].stats[cpu], cancel);
 }
 
@@ -185,10 +176,9 @@ static s64 profile_time;
 /* start time of profile */
 static ktime_t profile_start_time;
 
-/* idle-ip */
-#define FIX_IDLE_IP_MAX			32
-extern struct list_head idle_ip_list;
-extern struct fix_idle_ip fix_idle_ip_arr[];
+/* idle ip */
+static int idle_ip_stats[4][32];
+extern char *idle_ip_names[4][32];
 
 static void clear_stats(struct cpuidle_stats *stats)
 {
@@ -204,7 +194,6 @@ static void clear_stats(struct cpuidle_stats *stats)
 
 static void reset_profile(void)
 {
-	struct idle_ip *ip;
 	int cpu, i;
 
 	profile_start_time = 0;
@@ -216,12 +205,7 @@ static void reset_profile(void)
 	for (i = 0; i < group_idle_state_count; i++)
 		clear_stats(&group_idle_state[i]->stats);
 
-	/* Initialize idle-ip count */
-	for (i = 0; i < FIX_IDLE_IP_MAX; i++)
-		fix_idle_ip_arr[i].count = 0;
-
-	list_for_each_entry(ip, &idle_ip_list, list)
-		ip->count = 0;
+	memset(idle_ip_stats, 0, sizeof(idle_ip_stats));
 }
 
 static void do_nothing(void *unused)
@@ -231,11 +215,9 @@ static void do_nothing(void *unused)
 static void cpuidle_profile_start(void)
 {
 	if (profile_started) {
-		pr_err("CPUIDLE: Profile is ongoing\n");
+		pr_err("cpuidle profile is ongoing\n");
 		return;
 	}
-
-	exynos_perf_cpuidle_start();
 
 	reset_profile();
 	profile_start_time = ktime_get();
@@ -247,24 +229,17 @@ static void cpuidle_profile_start(void)
 	smp_call_function(do_nothing, NULL, 1);
 	preempt_enable();
 
-	pr_info("CPUIDLE: Profile start!!\n");
+	pr_info("cpuidle profile start\n");
 }
 
 static void cpuidle_profile_stop(void)
 {
 	if (!profile_started) {
-		pr_err("CPUIDLE: Profile does not start yet\n");
+		pr_err("CPUIDLE profile does not start yet\n");
 		return;
 	}
 
-	if (auto_profile_started) {
-		pr_err("CPUIDLE: Auto Profile is ongoing\n");
-		return;
-	}
-
-	exynos_perf_cpuidle_stop();
-
-	pr_info("CPUIDLE: Profile is done!!\n");
+	pr_info("cpuidle profile stop\n");
 
 	preempt_disable();
 	/* wakeup all cpus to stop profile */
@@ -276,70 +251,12 @@ static void cpuidle_profile_stop(void)
 	profile_time = ktime_to_us(ktime_sub(ktime_get(), profile_start_time));
 }
 
-static void cpuidle_auto_profile_start(int timeout)
-{
-	if (profile_started) {
-		pr_err("CPUIDLE: Profile is ongoing\n");
-		return;
-	}
-
-	cpuidle_profile_start();
-	auto_profile_started = 1;
-	schedule_delayed_work(&auto_profile_work,
-			msecs_to_jiffies(timeout * MSEC_PER_SEC));
-}
-
-static void cpuidle_auto_profile_stop(void)
-{
-	if (!profile_started) {
-		pr_err("CPUIDLE: Profile does not start yet\n");
-		return;
-	}
-
-	cancel_delayed_work_sync(&auto_profile_work);
-	auto_profile_started = 0;
-	cpuidle_profile_stop();
-}
-
-static void print_result(void);
-static void cpuidle_auto_profile_work(struct work_struct *work)
-{
-	auto_profile_started = 0;
-	cpuidle_profile_stop();
-	print_result();
-}
-
 /************************************************************************
  *                               IDLE IP                                *
  ************************************************************************/
-void cpuidle_profile_idle_ip(unsigned long long val)
-{
-	struct idle_ip *ip;
-
-	/*
-	 * Return if profile is not started
-	 */
-	if (!profile_started)
-		return;
-
-	list_for_each_entry(ip, &idle_ip_list, list) {
-		/*
-		 * Profile non-idle IP using @val
-		 *
-		 * A bit of val is
-		 *                      == 0, it means idle.
-		 *                      == 1, it means non-idle.
-		 * So, profiler only count IP with a bit value of 1.
-		 */
-		if (val & ((unsigned long long)1 << ip->index))
-			ip->count++;
-	}
-}
-
-void cpuidle_profile_fix_idle_ip(unsigned int fix_idle_ip, int max_index)
+void cpuidle_profile_idle_ip(int index, unsigned int idle_ip)
 {
 	int i;
-	unsigned int val = 1;
 
 	/*
 	 * Return if profile is not started
@@ -347,9 +264,14 @@ void cpuidle_profile_fix_idle_ip(unsigned int fix_idle_ip, int max_index)
 	if (!profile_started)
 		return;
 
-	for (i = 0; i < max_index; i++)
-		if (fix_idle_ip & val << i)
-			fix_idle_ip_arr[i].count++;
+	for (i = 0; i < 32; i++) {
+		/*
+		 * If bit of idle_ip has 1, IP corresponding to its bit
+		 * is not idle.
+		 */
+		if (idle_ip & (1 << i))
+			idle_ip_stats[index][i]++;
+	}
 }
 
 /************************************************************************
@@ -382,16 +304,18 @@ static int cpu_idle_ratio(int cpu)
 	return calculate_percent(cpu_idle_time(cpu));
 }
 
-static ssize_t show_result(struct device *dev,
-				     struct device_attribute *attr,
+static ssize_t show_result(struct kobject *kobj,
+				     struct kobj_attribute *attr,
 				     char *buf)
 {
-	struct idle_ip *ip;
 	int ret = 0;
-	int cpu, i;
+	int cpu, i, bit;
 
-	if (profile_started)
-		return snprintf(buf, PAGE_SIZE, "CPUIDLE: Profile is ongoing\n");
+	if (profile_started) {
+		ret += snprintf(buf + ret, PAGE_SIZE - ret,
+				"CPUIDLE profile is ongoing\n");
+		return ret;
+	}
 
 	ret += snprintf(buf + ret, PAGE_SIZE - ret,
 		"#############################################################\n");
@@ -399,13 +323,19 @@ static ssize_t show_result(struct device *dev,
 		"Profiling Time : %lluus\n", profile_time);
 
 	ret += snprintf(buf + ret, PAGE_SIZE - ret,
-		"\n[total idle ratio]\n");
+		"\n");
+
+	ret += snprintf(buf + ret, PAGE_SIZE - ret,
+		"[total idle ratio]\n");
 	ret += snprintf(buf + ret, PAGE_SIZE - ret,
 		"#cpu      #time    #ratio\n");
 	for_each_possible_cpu(cpu)
 		ret += snprintf(buf + ret, PAGE_SIZE - ret,
 			"cpu%d %10lluus   %3u%%\n",
 			cpu, cpu_idle_time(cpu), cpu_idle_ratio(cpu));
+
+	ret += snprintf(buf + ret, PAGE_SIZE - ret,
+		"\n");
 
 	/*
 	 * Example of cpu idle state profile result.
@@ -421,7 +351,7 @@ static ssize_t show_result(struct device *dev,
 	 */
 	for (i = 0; i < cpu_idle_state_count; i++) {
 		ret += snprintf(buf + ret, PAGE_SIZE - ret,
-			"\n[state : %s]\n", cpu_idle_state[i].desc);
+			"[state : %s]\n", cpu_idle_state[i].desc);
 		ret += snprintf(buf + ret, PAGE_SIZE - ret,
 			"#cpu   #entry   #cancel      #time    #ratio\n");
 		for_each_possible_cpu(cpu) {
@@ -435,6 +365,9 @@ static ssize_t show_result(struct device *dev,
 				stats->time,
 				calculate_percent(stats->time));
 		}
+
+		ret += snprintf(buf + ret, PAGE_SIZE - ret,
+				"\n");
 	}
 
 	/*
@@ -453,7 +386,7 @@ static ssize_t show_result(struct device *dev,
 		struct cpuidle_stats *stats = &group_idle_state[i]->stats;
 
 		ret += snprintf(buf + ret, PAGE_SIZE - ret,
-			"\n[state : %s]\n", group_idle_state[i]->desc);
+			"[state : %s]\n", group_idle_state[i]->desc);
 		ret += snprintf(buf + ret, PAGE_SIZE - ret,
 			"#entry   #cancel      #time    #ratio\n");
 		ret += snprintf(buf + ret, PAGE_SIZE - ret,
@@ -462,22 +395,22 @@ static ssize_t show_result(struct device *dev,
 			stats->cancel_count,
 			stats->time,
 			calculate_percent(stats->time));
+
+		ret += snprintf(buf + ret, PAGE_SIZE - ret,
+				"\n");
 	}
 
-	ret += snprintf(buf + ret, PAGE_SIZE - ret, "\n[IDLE-IP statistics]\n");
+	ret += snprintf(buf + ret, PAGE_SIZE - ret, "[IDLE-IP statistics]\n");
+	for (i = 0; i < 4; i++) {
+		for (bit = 0; bit < 32; bit++) {
+			if (!idle_ip_stats[i][bit])
+				continue;
 
-	/* fix-idle-ip */
-	for (i = 0; i < FIX_IDLE_IP_MAX; i++)
-		if (fix_idle_ip_arr[i].count)
 			ret += snprintf(buf + ret, PAGE_SIZE - ret,
-					"busy IP : %s(count = %d)\n",
-					fix_idle_ip_arr[i].name, fix_idle_ip_arr[i].count);
-	/* idle-ip */
-	list_for_each_entry(ip, &idle_ip_list, list)
-		if (ip->count)
-			ret += snprintf(buf + ret, PAGE_SIZE - ret,
-					"busy IP : %s(count = %d)\n",
-					ip->name, ip->count);
+				"busy IP : %s(count = %d)\n",
+				idle_ip_names[i][bit], idle_ip_stats[i][bit]);
+		}
+	}
 
 	ret += snprintf(buf + ret, PAGE_SIZE - ret,
 		"#############################################################\n");
@@ -485,86 +418,26 @@ static ssize_t show_result(struct device *dev,
 	return ret;
 }
 
-static void print_result(void)
-{
-	struct idle_ip *ip;
-	int cpu, i;
-
-	if (profile_started) {
-		pr_info("CPUIDLE: Profile is ongoing\n");
-		return;
-	}
-
-	pr_info("#############################################################\n");
-	pr_info("Profiling Time : %lluus\n", profile_time);
-
-	/* total idle ratio */
-	pr_info("\n[total idle ratio]\n");
-	pr_info("#cpu      #time    #ratio\n");
-	for_each_possible_cpu(cpu)
-		pr_info("cpu%d %10lluus   %3u%%\n",
-				cpu, cpu_idle_time(cpu), cpu_idle_ratio(cpu));
-
-	/* cpu idle state */
-	for (i = 0; i < cpu_idle_state_count; i++) {
-		pr_info("\n[state : %s]\n", cpu_idle_state[i].desc);
-		pr_info("#cpu   #entry   #cancel      #time    #ratio\n");
-		for_each_possible_cpu(cpu) {
-			struct cpuidle_stats *stats = &cpu_idle_state[i].stats[cpu];
-
-			pr_info("cpu%d   %5u    %5u   %10lluus   %3u%%\n",
-					cpu,
-					stats->entry_count,
-					stats->cancel_count,
-					stats->time,
-					calculate_percent(stats->time));
-		}
-	}
-
-	/* group idle state (clsuter or system) */
-	for (i = 0; i < group_idle_state_count; i++) {
-		struct cpuidle_stats *stats = &group_idle_state[i]->stats;
-
-		pr_info("\n[state : %s]\n", group_idle_state[i]->desc);
-		pr_info("#entry   #cancel      #time    #ratio\n");
-		pr_info("%5u    %5u   %10lluus   %3u%%\n",
-				stats->entry_count,
-				stats->cancel_count,
-				stats->time,
-				calculate_percent(stats->time));
-	}
-
-	pr_info("\n[IDLE-IP statistics]\n");
-
-	/* fix-idle-ip */
-	for (i = 0; i < FIX_IDLE_IP_MAX; i++)
-		if (fix_idle_ip_arr[i].count)
-			pr_info("busy IP : %s(count = %d)\n",
-					fix_idle_ip_arr[i].name, fix_idle_ip_arr[i].count);
-	/* idle-ip */
-	list_for_each_entry(ip, &idle_ip_list, list)
-		if (ip->count)
-			pr_info("busy IP : %s(count = %d)\n",
-					ip->name, ip->count);
-
-	pr_info("#############################################################\n");
-}
-
 /*********************************************************************
  *                          Sysfs interface                          *
  *********************************************************************/
-static ssize_t show_cpuidle_profile(struct device *dev,
-				     struct device_attribute *attr,
+static ssize_t show_cpuidle_profile(struct kobject *kobj,
+				     struct kobj_attribute *attr,
 				     char *buf)
 {
+	int ret = 0;
+
 	if (profile_started)
-		return snprintf(buf, PAGE_SIZE, "CPUIDLE: Profile is ongoing\n");
+		ret += snprintf(buf + ret, PAGE_SIZE - ret,
+				"CPUIDLE profile is ongoing\n");
 	else
-		return show_result(dev, attr, buf);
+		ret = show_result(kobj, attr, buf);
+
+	return ret;
 }
 
-static ssize_t store_cpuidle_profile(struct device *dev,
-				      struct device_attribute *attr,
+static ssize_t store_cpuidle_profile(struct kobject *kobj,
+				      struct kobj_attribute *attr,
 				      const char *buf, size_t count)
 {
 	int input;
@@ -579,41 +452,12 @@ static ssize_t store_cpuidle_profile(struct device *dev,
 
 	return count;
 }
-static ssize_t show_cpuidle_auto_profile(struct device *dev,
-				     struct device_attribute *attr,
-				     char *buf)
-{
 
-	if (profile_started)
-		return snprintf(buf, PAGE_SIZE, "CPUIDLE: Auto profile is ongoing\n");
-	else
-		return snprintf(buf, PAGE_SIZE, "CPUIDLE: Auto profile is done\n");
-}
-
-static ssize_t store_cpuidle_auto_profile(struct device *dev,
-				      struct device_attribute *attr,
-				      const char *buf, size_t count)
-{
-	unsigned int timeout;
-
-	if (!sscanf(buf, "%u", &timeout))
-		return -EINVAL;
-
-	if (timeout)
-		cpuidle_auto_profile_start(timeout);
-	else
-		cpuidle_auto_profile_stop();
-
-	return count;
-}
-
-
-static DEVICE_ATTR(profile, 0644, show_cpuidle_profile, store_cpuidle_profile);
-static DEVICE_ATTR(auto_profile, 0644, show_cpuidle_auto_profile, store_cpuidle_auto_profile);
+static struct kobj_attribute cpuidle_profile_attr =
+	__ATTR(profile, 0644, show_cpuidle_profile, store_cpuidle_profile);
 
 static struct attribute *cpuidle_profile_attrs[] = {
-	&dev_attr_profile.attr,
-	&dev_attr_auto_profile.attr,
+	&cpuidle_profile_attr.attr,
 	NULL,
 };
 
@@ -643,8 +487,6 @@ cpuidle_profile_cpu_idle_register(struct cpuidle_driver *drv)
 
 	cpu_idle_state = state;
 	cpu_idle_state_count = state_count;
-
-	exynos_perf_cpu_idle_register(drv);
 }
 
 void __init
@@ -665,6 +507,7 @@ cpuidle_profile_group_idle_register(int id, const char *name)
 	group_idle_state_count++;
 }
 
+/* On this tree cpuidle-exynos64.c creates the "cpuidle" class and shares it. */
 extern struct class *idle_class;
 
 static int __init cpuidle_profile_init(void)
@@ -673,12 +516,12 @@ static int __init cpuidle_profile_init(void)
 	int ret = 0;
 
 	dev = device_create(idle_class, NULL, MKDEV(0, 0), NULL, "cpuidle_profiler");
+	if (IS_ERR(dev))
+		return PTR_ERR(dev);
 
 	ret = sysfs_create_group(&dev->kobj, &cpuidle_profile_group);
 	if (ret)
 		pr_err("%s: failed to create sysfs group", __func__);
-	else
-		INIT_DELAYED_WORK(&auto_profile_work, cpuidle_auto_profile_work);
 
 	return ret;
 }
