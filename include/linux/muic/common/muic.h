@@ -341,6 +341,11 @@ struct muic_platform_data {
 	/* muic check charger init function */
 	int (*muic_hv_charger_init_cb)(void);
 
+	/* SM5713 driver (4.14 generation, no muic_interface_t): op mode and AFC entry */
+	int opmode;
+	int (*muic_afc_set_voltage_cb)(int voltage);
+	int (*muic_afc_get_voltage_cb)(void);
+
 	/* muic set hiccup mode function */
 	int (*muic_set_hiccup_mode_cb)(int on_off);
 };

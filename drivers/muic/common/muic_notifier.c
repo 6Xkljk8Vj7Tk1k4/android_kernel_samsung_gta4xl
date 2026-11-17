@@ -32,6 +32,14 @@
 #define DESTROY_MUIC_NOTIFIER_BLOCK(nb)			\
 		SET_MUIC_NOTIFIER_BLOCK(nb, NULL, -1)
 
+/*
+ * "New" notification payload (PD_NOTI_ATTACH_TYPEDEF instead of a bare attached_dev): the MUIC
+ * manager uses it, and so does the SM5713 driver of the 4.14 generation, whose listeners
+ * (usb_notify, typec manager, battery_v2) all parse the new payload when PDIC_NOTIFIER is on.
+ */
+#define MUIC_NEW_NOTI	((IS_ENABLED(CONFIG_MUIC_MANAGER) || IS_ENABLED(CONFIG_MUIC_SM5713)) && \
+			 IS_ENABLED(CONFIG_PDIC_NOTIFIER))
+
 static struct muic_notifier_struct muic_notifier;
 #if IS_ENABLED(CONFIG_PDIC_SLSI_NON_MCU)
 static struct muic_notifier_struct muic_pdic_notifier;
@@ -69,7 +77,7 @@ static void __set_noti_cxt(int attach, int type)
 {
 	if (type < 0) {
 		muic_notifier.cmd = attach;
-#if IS_ENABLED(CONFIG_MUIC_MANAGER) && IS_ENABLED(CONFIG_PDIC_NOTIFIER)
+#if MUIC_NEW_NOTI
 		muic_notifier.cxt.attach = attach;
 #endif
 		return;
@@ -79,7 +87,7 @@ static void __set_noti_cxt(int attach, int type)
 	muic_notifier.cmd = attach;
 	muic_notifier.attached_dev = type;
 
-#if IS_ENABLED(CONFIG_MUIC_MANAGER) && IS_ENABLED(CONFIG_PDIC_NOTIFIER)
+#if MUIC_NEW_NOTI
 	/* New Interface */
 	muic_notifier.cxt.src = PDIC_NOTIFY_DEV_MUIC;
 	muic_notifier.cxt.dest = NOTI_ADDR_DST;
@@ -95,7 +103,7 @@ static void __set_pdic_noti_cxt(int attach, int type)
 {
 	if (type < 0) {
 		muic_pdic_notifier.cmd = attach;
-#if IS_ENABLED(CONFIG_MUIC_MANAGER) && IS_ENABLED(CONFIG_PDIC_NOTIFIER)
+#if MUIC_NEW_NOTI
 		muic_pdic_notifier.cxt.attach = attach;
 #endif
 		return;
@@ -105,7 +113,7 @@ static void __set_pdic_noti_cxt(int attach, int type)
 	muic_pdic_notifier.cmd = attach;
 	muic_pdic_notifier.attached_dev = type;
 
-#if IS_ENABLED(CONFIG_MUIC_MANAGER) && IS_ENABLED(CONFIG_PDIC_NOTIFIER)
+#if MUIC_NEW_NOTI
 	/* New Interface */
 	muic_pdic_notifier.cxt.src = PDIC_NOTIFY_DEV_MUIC;
 	muic_pdic_notifier.cxt.dest = NOTI_ADDR_DST;
@@ -121,7 +129,7 @@ int muic_notifier_register(struct notifier_block *nb, notifier_fn_t notifier,
 			muic_notifier_device_t listener)
 {
 	int ret = 0;
-#if IS_ENABLED(CONFIG_MUIC_MANAGER) && IS_ENABLED(CONFIG_PDIC_NOTIFIER)
+#if MUIC_NEW_NOTI
 	void *pcxt;
 #endif
 
@@ -135,7 +143,7 @@ int muic_notifier_register(struct notifier_block *nb, notifier_fn_t notifier,
 		pr_err("%s: blocking_notifier_chain_register error(%d)\n",
 				__func__, ret);
 
-#if IS_ENABLED(CONFIG_MUIC_MANAGER) && IS_ENABLED(CONFIG_PDIC_NOTIFIER)
+#if MUIC_NEW_NOTI
 	pcxt = muic_uses_new_noti ? &(muic_notifier.cxt) :
 			(void *)&(muic_notifier.attached_dev);
 
@@ -169,7 +177,7 @@ EXPORT_SYMBOL(muic_notifier_unregister);
 static int muic_notifier_notify(void)
 {
 	int ret = 0;
-#if IS_ENABLED(CONFIG_MUIC_MANAGER) && IS_ENABLED(CONFIG_PDIC_NOTIFIER)
+#if MUIC_NEW_NOTI
 	void *pcxt;
 
 	pr_info("%s: CMD=%d, DATA=%d\n", __func__, muic_notifier.cxt.attach,
@@ -220,12 +228,12 @@ static int muic_notifier_notify(void)
 	return ret;
 }
 
-#if IS_ENABLED(CONFIG_PDIC_NOTIFIER)
+#if IS_ENABLED(CONFIG_PDIC_SLSI_NON_MCU)	/* was CONFIG_PDIC_NOTIFIER: muic_pdic_notifier is only declared with PDIC_SLSI_NON_MCU */
 int muic_pdic_notifier_register(struct notifier_block *nb, notifier_fn_t notifier,
 			muic_notifier_device_t listener)
 {
 	int ret = 0;
-#if IS_ENABLED(CONFIG_MUIC_MANAGER) && IS_ENABLED(CONFIG_PDIC_NOTIFIER)
+#if MUIC_NEW_NOTI
 	void *pcxt;
 #endif
 
@@ -237,7 +245,7 @@ int muic_pdic_notifier_register(struct notifier_block *nb, notifier_fn_t notifie
 		pr_err("%s: blocking_notifier_chain_register error(%d)\n",
 				__func__, ret);
 
-#if IS_ENABLED(CONFIG_MUIC_MANAGER) && IS_ENABLED(CONFIG_PDIC_NOTIFIER)
+#if MUIC_NEW_NOTI
 	pcxt = muic_pdic_uses_new_noti ? &(muic_pdic_notifier.cxt) : \
 			(void *)&(muic_pdic_notifier.attached_dev);
 
@@ -271,7 +279,7 @@ EXPORT_SYMBOL(muic_pdic_notifier_unregister);
 static int muic_pdic_notifier_notify(void)
 {
 	int ret = 0;
-#if IS_ENABLED(CONFIG_MUIC_MANAGER) && IS_ENABLED(CONFIG_PDIC_NOTIFIER)
+#if MUIC_NEW_NOTI
 	void *pcxt;
 
 	pr_info("%s: CMD=%d, DATA=%d\n", __func__, muic_pdic_notifier.cxt.attach,
@@ -359,7 +367,7 @@ void muic_notifier_detach_attached_dev(muic_attached_dev_t cur_dev)
 
 	__set_noti_cxt(MUIC_NOTIFY_CMD_DETACH, -1);
 
-#if IS_ENABLED(CONFIG_MUIC_MANAGER) && IS_ENABLED(CONFIG_PDIC_NOTIFIER)
+#if MUIC_NEW_NOTI
 	if (muic_notifier.cxt.cable_type != cur_dev)
 		pr_warn("%s: attached_dev of muic_notifier(%d) != muic_data(%d)\n",
 			__func__, muic_notifier.cxt.cable_type, cur_dev);
@@ -419,7 +427,7 @@ static int muic_notifier_init(void)
 	}
 	muic_notifier_init_done = 1;
 
-#if IS_ENABLED(CONFIG_MUIC_MANAGER) && IS_ENABLED(CONFIG_PDIC_NOTIFIER)
+#if MUIC_NEW_NOTI
 	muic_uses_new_noti = 1;
 #endif
 	BLOCKING_INIT_NOTIFIER_HEAD(&(muic_notifier.notifier_call_chain));

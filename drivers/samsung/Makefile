@@ -15,6 +15,9 @@ obj-$(CONFIG_SEC_DEBUG)		+= debug/
 obj-$(CONFIG_SEC_PM)		+= pm/
 obj-$(CONFIG_SEC_PERF)		+= perf/
 
+# VBUS status notifier (from the 4.14 tree, drivers/samsung/misc)
+obj-$(CONFIG_VBUS_NOTIFIER)	+= vbus_notifier.o
+
 # Samsung Reset Feature
 obj-$(CONFIG_SEC_REBOOT)	+= sec_reboot.o
 

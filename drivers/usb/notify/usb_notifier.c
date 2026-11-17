@@ -32,7 +32,7 @@
 #if defined(CONFIG_BATTERY_SAMSUNG) && defined(CONFIG_BATTERY_SAMSUNG_LEGO_STYLE)
 #include "../../battery/common/sec_charging_common.h"
 #else
-#include <linux/battery/sec_charging_common.h>
+#include "../../battery_v2/include/sec_charging_common.h"	/* as dwc3/core.h does */
 #endif
 #include "usb_notifier.h"
 

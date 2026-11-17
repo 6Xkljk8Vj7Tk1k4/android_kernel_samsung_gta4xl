@@ -1,0 +1,26 @@
+# SM5713 MUIC of gta4xl, from the 4.14 kernel
+
+config MUIC_SM5713
+	bool "SM5713 MUIC"
+	depends on USE_MUIC && MFD_SM5713
+	help
+	  If you say yes here you will get support for the SM5713 MUIC chip.
+
+config MUIC_BCD_RESCAN
+	bool "SM MUIC supports BC 1.2 retry"
+	depends on MUIC_SM5713
+	help
+	  If you say yes here you will get support for the BC 1.2 retry in SM MUIC chip.
+
+config MUIC_SM5713_BC1_2_CERTI
+	bool "MUIC_SM5713_BC1_2_CERTI"
+	depends on MUIC_SM5713 && MUIC_SUPPORT_CCIC
+	help
+	  If you say yes here you will get support for BC12 certification of SM5713 one chip.
+
+# names the 4.14 drivers test; this tree renamed CCIC to PDIC
+config MUIC_SUPPORT_CCIC
+	def_bool MUIC_SUPPORT_PDIC && MUIC_SM5713
+
+config CCIC_NOTIFIER
+	def_bool PDIC_NOTIFIER && MUIC_SM5713

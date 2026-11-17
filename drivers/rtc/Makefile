@@ -148,6 +148,7 @@ obj-$(CONFIG_RTC_DRV_S3C)	+= rtc-s3c.o
 obj-$(CONFIG_RTC_DRV_S5M)	+= rtc-s5m.o
 obj-$(CONFIG_RTC_DRV_S2MPS19)   += rtc-s2mps19.o
 obj-$(CONFIG_RTC_DRV_S2MPU10)   += rtc-s2mpu10.o
+obj-$(CONFIG_RTC_DRV_S2MPU09)   += rtc-s2mpu09.o
 obj-$(CONFIG_RTC_DRV_S2MPU12)   += rtc-s2mpu12.o
 obj-$(CONFIG_RTC_DRV_SA1100)	+= rtc-sa1100.o
 obj-$(CONFIG_RTC_DRV_SC27XX)	+= rtc-sc27xx.o

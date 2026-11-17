@@ -9,6 +9,16 @@ config SEC_EXT
 	bool "Samsung TN extension Feature"
 	default y
 
+config VBUS_NOTIFIER
+	bool "VBUS notifier support"
+	default n
+	help
+	  The VBUS status change notification of the 4.14 Exynos 9610 tree: the SM5713
+	  Type-C driver reports VBUS going high or low, and the battery driver, the MUIC,
+	  the USB notifier, the Type-C manager and the touchscreen (charger noise mode)
+	  listen. The drivers brought over from 4.14 test CONFIG_VBUS_NOTIFIER; without
+	  this entry the symbol did not exist and all of that was compiled out.
+
 config SEC_REBOOT
 	bool "Enable TN reboot features"
 	depends on SEC_EXT

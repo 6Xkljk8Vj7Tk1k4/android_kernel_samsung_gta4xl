@@ -103,6 +103,7 @@ obj-$(CONFIG_REGULATOR_S2MPS20) += s2mps20-regulator.o s2mps20-powermeter.o
 obj-$(CONFIG_REGULATOR_S2MPS22) += s2mps22_regulator.o s2mps22_powermeter.o
 obj-$(CONFIG_REGULATOR_S2MPU10) += s2mpu10-regulator.o
 obj-$(CONFIG_REGULATOR_S2MPU11) += s2mpu11-regulator.o
+obj-$(CONFIG_REGULATOR_S2MPU09) += s2mpu09-regulator.o
 obj-$(CONFIG_REGULATOR_S2MPU12) += s2mpu12-regulator.o
 obj-$(CONFIG_REGULATOR_S2MPB02) += s2mpb02-regulator.o
 obj-$(CONFIG_REGULATOR_S2DOS05) += s2dos05.o  s2dos05_powermeter.o
