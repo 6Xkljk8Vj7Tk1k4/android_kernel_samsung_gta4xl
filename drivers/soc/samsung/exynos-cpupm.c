@@ -313,16 +313,34 @@ bool exynos_cpuhp_last_cpu(unsigned int cpu)
 	return cpumask_test_cpu(cpu, &cpuhp_last_mask);
 }
 
+/*
+ * The CPUs of the cluster @cpu belongs to, online or not. topology_core_cpumask() cannot be
+ * used here: since 4.19 __cpu_disable() takes a CPU out of its siblings' masks and leaves it
+ * alone in its own (remove_cpu_topology()) before the DOWN_POWER_CONTROL callback runs. Every
+ * CPU going down then looked like the last one of its cluster and the cluster was powered
+ * down under the cores still running in it: the first big core taken offline (by the thermal
+ * driver at 95 C, or by suspend) hung the tablet. package_id survives the offline state.
+ */
+static void cpuhp_cluster_cpus(unsigned int cpu, struct cpumask *mask)
+{
+	unsigned int i;
+
+	cpumask_clear(mask);
+	for_each_possible_cpu(i)
+		if (cpu_topology[i].package_id == cpu_topology[cpu].package_id)
+			cpumask_set_cpu(i, mask);
+}
+
 static int cpuhp_cpupm_online(unsigned int cpu)
 {
-	struct cpumask mask;
+	struct cpumask cluster, mask;
 
-	cpumask_and(&mask, topology_core_cpumask(cpu), cpu_online_mask);
+	cpuhp_cluster_cpus(cpu, &cluster);
+	cpumask_and(&mask, &cluster, cpu_online_mask);
 	if (cpumask_weight(&mask) == 0) {
 		cluster_enable(cpu_topology[cpu].package_id);
 		/* clear cpus of this cluster from cpuhp_last_mask */
-		cpumask_andnot(&cpuhp_last_mask,
-			&cpuhp_last_mask, topology_core_cpumask(cpu));
+		cpumask_andnot(&cpuhp_last_mask, &cpuhp_last_mask, &cluster);
 	}
 
 	cpu_enable(cpu);
@@ -332,13 +350,14 @@ static int cpuhp_cpupm_online(unsigned int cpu)
 
 static int cpuhp_cpupm_offline(unsigned int cpu)
 {
-	struct cpumask online_mask, last_mask;
+	struct cpumask cluster, online_mask, last_mask;
 
 	cpu_disable(cpu);
 
+	cpuhp_cluster_cpus(cpu, &cluster);
 	spin_lock(&cpupm_lock);
-	cpumask_and(&online_mask, topology_core_cpumask(cpu), cpu_online_mask);
-	cpumask_and(&last_mask, topology_core_cpumask(cpu), &cpuhp_last_mask);
+	cpumask_and(&online_mask, &cluster, cpu_online_mask);
+	cpumask_and(&last_mask, &cluster, &cpuhp_last_mask);
 	if ((cpumask_weight(&online_mask) == 0) && cpumask_empty(&last_mask)) {
 		/* set cpu cpuhp_last_mask */
 		cpumask_set_cpu(cpu, &cpuhp_last_mask);
