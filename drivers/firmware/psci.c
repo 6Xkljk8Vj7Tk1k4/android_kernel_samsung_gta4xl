@@ -720,6 +720,19 @@ static int __init psci_0_1_init(struct device_node *np)
 		psci_ops.migrate = psci_migrate;
 	}
 
+	/*
+	 * PSCI 0.1 has no way to ask for the SMC calling convention, and the
+	 * Exynos 9610 firmware describes itself that way while it implements
+	 * SMCCC 1.1 with ARM_SMCCC_ARCH_WORKAROUND_1. Ask it directly, as the
+	 * 4.14 vendor kernel does: without this the Cortex-A73 cores have no
+	 * Spectre-v2 mitigation ("Vulnerable" in sysfs).
+	 */
+	if (IS_ENABLED(CONFIG_SOC_EXYNOS9610) &&
+	    invoke_psci_fn(ARM_SMCCC_VERSION_FUNC_ID, 0, 0, 0) == ARM_SMCCC_VERSION_1_1) {
+		pr_info("SMC Calling Convention v1.1 (asked directly)\n");
+		psci_ops.smccc_version = SMCCC_VERSION_1_1;
+	}
+
 out_put_node:
 	of_node_put(np);
 	return err;
