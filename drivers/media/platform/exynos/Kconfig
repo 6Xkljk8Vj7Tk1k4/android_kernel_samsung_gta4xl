@@ -10,7 +10,10 @@ config VIDEO_EXYNOS
 
 if VIDEO_EXYNOS
         source "drivers/media/platform/exynos/mfc/Kconfig"
-        source "drivers/media/platform/exynos/camera/Kconfig"
+# The Exynos 9610 keeps the fimc-is2 driver of its 4.14 kernel: the camera HAL and the ISP
+# library binaries are built against it. The tree's newer stack (camera/, "Pablo") defines
+# the same Kconfig symbols, choice members among them, so only one of the two can be sourced.
+        source "drivers/media/platform/exynos/fimc-is2/Kconfig"
         source "drivers/media/platform/exynos/camera-pp/Kconfig"
 endif
 

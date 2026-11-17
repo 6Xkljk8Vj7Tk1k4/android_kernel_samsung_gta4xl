@@ -62,6 +62,37 @@ static struct mfc_fmt *__mfc_enc_find_format(struct mfc_ctx *ctx,
 	return fmt;
 }
 
+/*
+ * Eight encoder controls of the 4.14 MFC driver are mainline controls since
+ * 4.19. A video HAL built against the 4.14 headers (the Exynos 9610 boards)
+ * still sends the old vendor ids; the values mean the same.
+ */
+#define MFC_ENC_OLD_CID(n)	(V4L2_CID_MPEG_MFC_BASE + (n))
+
+static u32 __mfc_enc_alias_ctrl_id(u32 id)
+{
+	switch (id) {
+	case MFC_ENC_OLD_CID(110):
+		return V4L2_CID_MPEG_VIDEO_HEVC_MIN_QP;
+	case MFC_ENC_OLD_CID(111):
+		return V4L2_CID_MPEG_VIDEO_HEVC_MAX_QP;
+	case MFC_ENC_OLD_CID(112):
+		return V4L2_CID_MPEG_VIDEO_HEVC_I_FRAME_QP;
+	case MFC_ENC_OLD_CID(113):
+		return V4L2_CID_MPEG_VIDEO_HEVC_P_FRAME_QP;
+	case MFC_ENC_OLD_CID(114):
+		return V4L2_CID_MPEG_VIDEO_HEVC_B_FRAME_QP;
+	case MFC_ENC_OLD_CID(120):
+		return V4L2_CID_MPEG_VIDEO_HEVC_PROFILE;
+	case MFC_ENC_OLD_CID(121):
+		return V4L2_CID_MPEG_VIDEO_HEVC_LEVEL;
+	case MFC_ENC_OLD_CID(182):
+		return V4L2_CID_MPEG_VIDEO_VP9_PROFILE;
+	default:
+		return id;
+	}
+}
+
 static struct v4l2_queryctrl *__mfc_enc_get_ctrl(int id)
 {
 	unsigned long i;
@@ -959,14 +990,16 @@ static int mfc_enc_queryctrl(struct file *file, void *priv,
 {
 	struct mfc_dev *dev = video_drvdata(file);
 	struct v4l2_queryctrl *c;
+	u32 id = qc->id;
 
-	c = __mfc_enc_get_ctrl(qc->id);
+	c = __mfc_enc_get_ctrl(__mfc_enc_alias_ctrl_id(id));
 	if (!c) {
 		mfc_err_dev("[CTRLS] not supported control id (%#x)\n", qc->id);
 		return -EINVAL;
 	}
 
 	*qc = *c;
+	qc->id = id;
 	return 0;
 }
 
@@ -1094,9 +1127,12 @@ static int mfc_enc_g_ctrl(struct file *file, void *priv,
 {
 	struct mfc_ctx *ctx = fh_to_mfc_ctx(file->private_data);
 	int ret = 0;
+	u32 id = ctrl->id;
 
 	mfc_debug_enter();
+	ctrl->id = __mfc_enc_alias_ctrl_id(id);
 	ret = __mfc_enc_get_ctrl_val(ctx, ctrl);
+	ctrl->id = id;
 	mfc_debug_leave();
 
 	return ret;
@@ -2059,14 +2095,15 @@ static int mfc_enc_s_ctrl(struct file *file, void *priv,
 {
 	struct mfc_ctx *ctx = fh_to_mfc_ctx(file->private_data);
 	int ret = 0;
+	u32 id = ctrl->id;
 
 	mfc_debug_enter();
 
+	ctrl->id = __mfc_enc_alias_ctrl_id(id);
 	ret = __mfc_enc_check_ctrl_val(ctx, ctrl);
-	if (ret != 0)
-		return ret;
-
-	ret = __mfc_enc_set_ctrl_val(ctx, ctrl);
+	if (ret == 0)
+		ret = __mfc_enc_set_ctrl_val(ctx, ctrl);
+	ctrl->id = id;
 
 	mfc_debug_leave();
 
@@ -2088,7 +2125,7 @@ static int mfc_enc_g_ext_ctrls(struct file *file, void *priv,
 	for (i = 0; i < f->count; i++) {
 		ext_ctrl = (f->controls + i);
 
-		ctrl.id = ext_ctrl->id;
+		ctrl.id = __mfc_enc_alias_ctrl_id(ext_ctrl->id);
 
 		ret = __mfc_enc_get_ctrl_val(ctx, &ctrl);
 		if (ret == 0) {
@@ -2120,7 +2157,7 @@ static int mfc_enc_s_ext_ctrls(struct file *file, void *priv,
 	for (i = 0; i < f->count; i++) {
 		ext_ctrl = (f->controls + i);
 
-		ctrl.id = ext_ctrl->id;
+		ctrl.id = __mfc_enc_alias_ctrl_id(ext_ctrl->id);
 		ctrl.value = ext_ctrl->value;
 
 		ret = __mfc_enc_check_ctrl_val(ctx, &ctrl);
@@ -2157,7 +2194,7 @@ static int mfc_enc_try_ext_ctrls(struct file *file, void *priv,
 	for (i = 0; i < f->count; i++) {
 		ext_ctrl = (f->controls + i);
 
-		ctrl.id = ext_ctrl->id;
+		ctrl.id = __mfc_enc_alias_ctrl_id(ext_ctrl->id);
 		ctrl.value = ext_ctrl->value;
 
 		ret = __mfc_enc_check_ctrl_val(ctx, &ctrl);

@@ -902,8 +902,13 @@ static int __mfc_parse_mfc_qos_platdata(struct device_node *np, char *node_name,
 
 	of_property_read_string(np_qos, "bts_scen", &qosdata->name);
 	if (!qosdata->name) {
+#ifdef CONFIG_MFC_NO_RENEWAL_BTS
+		/* the older BTS (Exynos 9610) takes the mo_* values, not a scenario name */
+		qosdata->name = "none";
+#else
 		pr_err("[QoS] bts_scen is missing in '%s' node", node_name);
 		return -EINVAL;
+#endif
 	}
 
 #ifdef CONFIG_MFC_USE_BTS
@@ -979,6 +984,10 @@ static void __mfc_create_bitrate_table(struct mfc_dev *dev)
 	struct mfc_platdata *pdata = dev->pdata;
 	int i, interval;
 
+	/* optional: the 4.14 binding has no bitrate table */
+	if (!pdata->num_mfc_freq || !pdata->max_Kbps[1])
+		return;
+
 	interval = pdata->max_Kbps[0] / pdata->num_mfc_freq;
 	dev->bps_ratio = pdata->max_Kbps[0] / dev->pdata->max_Kbps[1];
 	for (i = 0; i < pdata->num_mfc_freq; i++) {
@@ -996,6 +1005,7 @@ static int __mfc_parse_dt(struct device_node *np, struct mfc_dev *mfc)
 	struct device_node *np_qos;
 	char node_name[50];
 	int i;
+	bool old_qos_binding = false;
 
 	if (!np) {
 		pr_err("there is no device node\n");
@@ -1111,17 +1121,31 @@ static int __mfc_parse_dt(struct device_node *np, struct mfc_dev *mfc)
 	of_property_read_u32(np, "mo_control", &pdata->mo_control);
 	of_property_read_u32(np, "bw_control", &pdata->bw_control);
 
+	/*
+	 * The 4.14 binding (Exynos 9610 device tree) has one table,
+	 * "mfc_qos_variant_N": num_qos_steps steps for every case and
+	 * max_qos_steps of them (one more) when only an encoder runs.
+	 */
+	if (!pdata->num_default_qos_steps && !pdata->num_encoder_qos_steps &&
+	    !of_property_read_u32(np, "num_qos_steps", &pdata->num_default_qos_steps)) {
+		old_qos_binding = true;
+		if (of_property_read_u32(np, "max_qos_steps", &pdata->num_encoder_qos_steps))
+			pdata->num_encoder_qos_steps = pdata->num_default_qos_steps;
+	}
+
 	pdata->default_qos_table = devm_kzalloc(mfc->device,
 			sizeof(struct mfc_qos) * pdata->num_default_qos_steps, GFP_KERNEL);
 	for (i = 0; i < pdata->num_default_qos_steps; i++) {
-		snprintf(node_name, sizeof(node_name), "mfc_d_qos_variant_%d", i);
+		snprintf(node_name, sizeof(node_name),
+			old_qos_binding ? "mfc_qos_variant_%d" : "mfc_d_qos_variant_%d", i);
 		__mfc_parse_mfc_qos_platdata(np, node_name, &pdata->default_qos_table[i], mfc);
 	}
 
 	pdata->encoder_qos_table = devm_kzalloc(mfc->device,
 			sizeof(struct mfc_qos) * pdata->num_encoder_qos_steps, GFP_KERNEL);
 	for (i = 0; i < pdata->num_encoder_qos_steps; i++) {
-		snprintf(node_name, sizeof(node_name), "mfc_e_qos_variant_%d", i);
+		snprintf(node_name, sizeof(node_name),
+			old_qos_binding ? "mfc_qos_variant_%d" : "mfc_e_qos_variant_%d", i);
 		__mfc_parse_mfc_qos_platdata(np, node_name, &pdata->encoder_qos_table[i], mfc);
 	}
 
@@ -1142,8 +1166,12 @@ static int __mfc_parse_dt(struct device_node *np, struct mfc_dev *mfc)
 
 	of_property_read_string(np_qos, "bts_scen", &pdata->qos_boost_table->name);
 	if (!pdata->qos_boost_table->name) {
+#ifdef CONFIG_MFC_NO_RENEWAL_BTS
+		pdata->qos_boost_table->name = "none";
+#else
 		pr_err("[QoS][BOOST] bts_scen is missing in qos_boost node");
 		return -EINVAL;
+#endif
 	}
 
 #ifdef CONFIG_MFC_USE_BTS

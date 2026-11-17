@@ -583,6 +583,9 @@ static int __mfc_qos_get_freq_by_bps(struct mfc_dev *dev, unsigned long total_bp
 {
 	int i;
 
+	if (!dev->pdata->num_mfc_freq)
+		return 0;
+
 	if (total_bps > dev->pdata->max_Kbps[0]) {
 		mfc_debug_dev(4, "[QoS] overspec bps %ld > %d\n",
 				total_bps, dev->pdata->max_Kbps[0]);

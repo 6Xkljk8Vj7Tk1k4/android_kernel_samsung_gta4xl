@@ -20,6 +20,7 @@
 #include <linux/slab.h>
 #include <linux/pm_runtime.h>
 #include <linux/exynos_iovmm.h>
+#include <linux/smc.h>
 #include <media/v4l2-ioctl.h>
 
 #include <video/videonode.h>
@@ -39,9 +40,6 @@ module_param_named(gdc_log_level, gdc_log_level, uint, S_IRUGO | S_IWUSR);
  */
 int __gdc_measure_hw_latency;
 module_param_named(gdc_measure_hw_latency, __gdc_measure_hw_latency, int, 0644);
-
-static int gdc_suspend(struct device *dev);
-static int gdc_resume(struct device *dev);
 
 struct vb2_gdc_buffer {
 	struct v4l2_m2m_buffer mb;
@@ -204,14 +202,14 @@ static const struct gdc_fmt gdc_formats[] = {
 static const struct gdc_variant gdc_variant[] = {
 	{
 		.limit_input = {
-			.min_w		= 96,
-			.min_h		= 64,
+			.min_w		= 32,
+			.min_h		= 32,
 			.max_w		= 8192,
 			.max_h		= 6144,
 		},
 		.limit_output = {
-			.min_w		= 96,
-			.min_h		= 64,
+			.min_w		= 32,
+			.min_h		= 32,
 			.max_w		= 8192,
 			.max_h		= 6144,
 		},
@@ -344,7 +342,7 @@ static int gdc_v4l2_try_fmt_mplane(struct file *file, void *fh,
 	else
 		limit = &ctx->gdc_dev->variant->limit_output;
 
-/* TODO: check */
+/* ley : need to check */
 	w_align = gdc_fmt->h_shift;
 	h_align = gdc_fmt->v_shift;
 
@@ -389,22 +387,9 @@ static int gdc_v4l2_try_fmt_mplane(struct file *file, void *fh,
 					pixm->plane_fmt[i].sizeimage =
 						NV16M_CBCR_SIZE(pixm->width, pixm->height)
 						+ NV16M_CBCR_2B_SIZE(pixm->width, pixm->height);
-			} else if ((gdc_fmt->pixelformat == V4L2_PIX_FMT_NV12M_P010)
-				|| (gdc_fmt->pixelformat == V4L2_PIX_FMT_NV21M_P010)) {
-				if ((i % 2) == 0)
-					pixm->plane_fmt[i].sizeimage =
-						ALIGN(pixm->plane_fmt[i].bytesperline, 16) * pixm->height;
-				else if ((i % 2) == 1)
-					pixm->plane_fmt[i].sizeimage =
-						(ALIGN(pixm->plane_fmt[i].bytesperline, 16) * pixm->height) >> 1;
-			} else if ((gdc_fmt->pixelformat == V4L2_PIX_FMT_NV16M_P210)
-				|| (gdc_fmt->pixelformat == V4L2_PIX_FMT_NV61M_P210)) {
-				pixm->plane_fmt[i].sizeimage =
-					ALIGN(pixm->plane_fmt[i].bytesperline, 16) * pixm->height;
-			} else {
+			} else
 				pixm->plane_fmt[i].sizeimage =
 					pixm->plane_fmt[i].bytesperline * pixm->height;
-			}
 		}
 
 		v4l2_dbg(1, gdc_log_level, &ctx->gdc_dev->m2m.v4l2_dev,
@@ -495,37 +480,7 @@ static int gdc_v4l2_s_fmt_mplane(struct file *file, void *fh,
 	frame->width = pixm->width;
 	frame->height = pixm->height;
 	frame->pixelformat = pixm->pixelformat;
-
-	/* Set the SBWC flag */
-	frame->pixel_size = (pixm->flags & CAMERAPP_PIXEL_SIZE_MASK) >> CAMERAPP_PIXEL_SIZE_SHIFT;
-	frame->extra = (pixm->flags & CAMERAPP_EXTRA_MASK) >> CAMERAPP_EXTRA_SHIFT;
-
-	/* Check constraints for SBWC */
-	if (frame->extra == COMP) {
-		/* Support WDMA only */
-		if (V4L2_TYPE_IS_OUTPUT(f->type)) {
-			v4l2_err(&ctx->gdc_dev->m2m.v4l2_dev,
-				"Compressor decorder is not supported\n");
-			return -EINVAL;
-		}
-		/* Support NV12 format only */
-		if ((frame->gdc_fmt->pixelformat != V4L2_PIX_FMT_NV12M) &&
-		(frame->gdc_fmt->pixelformat != V4L2_PIX_FMT_NV12)) {
-			v4l2_err(&ctx->gdc_dev->m2m.v4l2_dev,
-				"Can't encode the format, check if it is supported format for SBWC. (%d)\n",
-				frame->gdc_fmt->pixelformat);
-			return -EINVAL;
-		}
-		/* Size align */
-		if (!IS_ALIGNED(frame->width, CAMERAPP_COMP_BLOCK_WIDTH) ||
-		    !IS_ALIGNED(frame->height, CAMERAPP_COMP_BLOCK_HEIGHT)) {
-			v4l2_err(&ctx->gdc_dev->m2m.v4l2_dev,
-				"%dx%d of target image is not aligned by %d*%d\n",
-				frame->width, frame->height,
-				CAMERAPP_COMP_BLOCK_WIDTH, CAMERAPP_COMP_BLOCK_HEIGHT);
-			return -EINVAL;
-		}
-	}
+	frame->pixel_size = pixm->reserved[1];
 
 	return 0;
 }
@@ -912,8 +867,6 @@ err_pclk:
 
 static void gdc_clk_power_disable(struct gdc_dev *gdc)
 {
-	camerapp_hw_gdc_stop(gdc->regs_base);
-
 	if (!IS_ERR(gdc->aclk))
 		clk_disable(gdc->aclk);
 
@@ -991,35 +944,6 @@ err_pclk_prepare:
 	return ret;
 }
 
-static void gdc_job_finish(struct gdc_dev *gdc, struct gdc_ctx *ctx)
-{
-	unsigned long flags;
-	struct vb2_v4l2_buffer *src_vb, *dst_vb;
-
-	spin_lock_irqsave(&gdc->slock, flags);
-
-	ctx = v4l2_m2m_get_curr_priv(gdc->m2m.m2m_dev);
-	if (!ctx || !ctx->m2m_ctx) {
-		dev_err(gdc->dev, "current ctx is NULL\n");
-		spin_unlock_irqrestore(&gdc->slock, flags);
-		return;
-
-	}
-	clear_bit(CTX_RUN, &ctx->flags);
-
-	src_vb = v4l2_m2m_src_buf_remove(ctx->m2m_ctx);
-	dst_vb = v4l2_m2m_dst_buf_remove(ctx->m2m_ctx);
-
-	BUG_ON(!src_vb || !dst_vb);
-
-	v4l2_m2m_buf_done(src_vb, VB2_BUF_STATE_ERROR);
-	v4l2_m2m_buf_done(dst_vb, VB2_BUF_STATE_ERROR);
-
-	v4l2_m2m_job_finish(gdc->m2m.m2m_dev, ctx->m2m_ctx);
-
-	spin_unlock_irqrestore(&gdc->slock, flags);
-}
-
 static int gdc_release(struct file *file)
 {
 	struct gdc_ctx *ctx = fh_to_gdc_ctx(file->private_data);
@@ -1030,11 +954,6 @@ static int gdc_release(struct file *file)
 	atomic_dec(&gdc->m2m.in_use);
 
 	gdc_dbg("gdc close\n");
-
-	if (test_bit(DEV_RUN, &gdc->state)) {
-		dev_err(gdc->dev, "%s, gdc is still running\n", __func__);
-		gdc_suspend(gdc->dev);
-	}
 
 	v4l2_m2m_ctx_release(ctx->m2m_ctx);
 	if (!IS_ERR(gdc->aclk))
@@ -1071,6 +990,35 @@ static const struct v4l2_file_operations gdc_v4l2_fops = {
 	.unlocked_ioctl	= video_ioctl2,
 	.mmap		= gdc_mmap,
 };
+
+static void gdc_job_finish(struct gdc_dev *gdc, struct gdc_ctx *ctx)
+{
+	unsigned long flags;
+	struct vb2_v4l2_buffer *src_vb, *dst_vb;
+
+	spin_lock_irqsave(&gdc->slock, flags);
+
+	ctx = v4l2_m2m_get_curr_priv(gdc->m2m.m2m_dev);
+	if (!ctx || !ctx->m2m_ctx) {
+		dev_err(gdc->dev, "current ctx is NULL\n");
+		spin_unlock_irqrestore(&gdc->slock, flags);
+		return;
+
+	}
+	clear_bit(CTX_RUN, &ctx->flags);
+
+	src_vb = v4l2_m2m_src_buf_remove(ctx->m2m_ctx);
+	dst_vb = v4l2_m2m_dst_buf_remove(ctx->m2m_ctx);
+
+	BUG_ON(!src_vb || !dst_vb);
+
+	v4l2_m2m_buf_done(src_vb, VB2_BUF_STATE_ERROR);
+	v4l2_m2m_buf_done(dst_vb, VB2_BUF_STATE_ERROR);
+
+	v4l2_m2m_job_finish(gdc->m2m.m2m_dev, ctx->m2m_ctx);
+
+	spin_unlock_irqrestore(&gdc->slock, flags);
+}
 
 static void gdc_watchdog(struct timer_list *t)
 {
@@ -1204,7 +1152,7 @@ static int gdc_run_next_job(struct gdc_dev *gdc)
 	set_bit(DEV_RUN, &gdc->state);
 	set_bit(CTX_RUN, &ctx->flags);
 
-/* TODO: check smmu_prefetch buffer setting */
+/* ley : need to check : smmu_prefetch buffer setting */
 	gdc_set_prefetch_buffers(gdc->dev, ctx);
 	mod_timer(&gdc->wdt.timer, jiffies + GDC_TIMEOUT);
 
@@ -1299,9 +1247,11 @@ static irqreturn_t gdc_irq_handler(int irq, void *priv)
 		gdc->current_ctx = NULL;
 		spin_unlock(&gdc->ctxlist_lock);
 
-		v4l2_m2m_job_finish(gdc->m2m.m2m_dev, ctx->m2m_ctx);
+		if (test_bit(DEV_SUSPEND, &gdc->state))
+			gdc_dbg("wake up blocked process by suspend\n");
+		else
+			v4l2_m2m_job_finish(gdc->m2m.m2m_dev, ctx->m2m_ctx);
 
-		gdc_resume(gdc->dev);
 		wake_up(&gdc->wait);
 	}
 
@@ -1351,22 +1301,7 @@ static int gdc_get_bufaddr(struct gdc_dev *gdc, struct gdc_ctx *ctx,
 			frame->addr.cb = gdc_get_dma_address(vb2buf, 1);
 			if (!frame->addr.cb)
 				return -EINVAL;
-			/* SBWC format */
-			if (frame->extra == COMP) {
-				/*
-				 * When SBWC is on, Buffer is consist of payload(before) + header(after).
-				 * Header base address is payload base address + payload memory size.
-				 */
-				if (frame->pixel_size == CAMERAPP_PIXEL_SIZE_8BIT) {
-					frame->addr.y_2bit = frame->addr.y + SBWC_8B_Y_SIZE(w, h);
-					frame->addr.cbcr_2bit = frame->addr.cb + SBWC_8B_CBCR_SIZE(w, h);
-				} else if (frame->pixel_size == CAMERAPP_PIXEL_SIZE_10BIT) {
-					frame->addr.y_2bit = frame->addr.y + SBWC_10B_Y_SIZE(w, h);
-					frame->addr.cbcr_2bit = frame->addr.cb + SBWC_10B_CBCR_SIZE(w, h);
-				} else {
-					dev_err(gdc->dev, "Please check frame->pixel_size for SBWC\n");
-				}
-			}
+
 			/* 8+2 format */
 			if ((frame->gdc_fmt->pixelformat == V4L2_PIX_FMT_NV16M_S10B)
 					|| (frame->gdc_fmt->pixelformat == V4L2_PIX_FMT_NV61M_S10B)) {
@@ -1859,8 +1794,11 @@ static int gdc_remove(struct platform_device *pdev)
 static void gdc_shutdown(struct platform_device *pdev)
 {
 	struct gdc_dev *gdc = platform_get_drvdata(pdev);
+	unsigned long flags;
 
+	spin_lock_irqsave(&gdc->slock, flags);
 	set_bit(DEV_SUSPEND, &gdc->state);
+	spin_unlock_irqrestore(&gdc->slock, flags);
 
 	wait_event(gdc->wait,
 			!test_bit(DEV_RUN, &gdc->state));
@@ -1869,7 +1807,7 @@ static void gdc_shutdown(struct platform_device *pdev)
 }
 static const struct of_device_id exynos_gdc_match[] = {
 	{
-		.compatible = "samsung,exynos-is-gdc",
+		.compatible = "samsung,exynos5-camerapp-gdc",
 	},
 	{},
 };

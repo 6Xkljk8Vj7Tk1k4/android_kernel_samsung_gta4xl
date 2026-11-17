@@ -17,4 +17,8 @@ obj-$(CONFIG_CAMERA_PP_GDC_V3_1_0_OBJ)  += camerapp-hw-api-gdc-v301.o
 obj-$(CONFIG_CAMERA_PP_GDC_V3_10_0_OBJ)	+= camerapp-hw-api-gdc-v310.o
 
 ccflags-y += -I $(srctree)/drivers/media/platform/exynos/camera-pp/
+# the 9610 camera stack is fimc-is2 (4.14), not this tree's "camera" directory
+ccflags-$(CONFIG_VIDEO_EXYNOS_FIMC_IS2) += -I $(srctree)/drivers/media/platform/exynos/fimc-is2/include
+ifndef CONFIG_VIDEO_EXYNOS_FIMC_IS2
 ccflags-y += -I $(srctree)/drivers/media/platform/exynos/camera/include
+endif
