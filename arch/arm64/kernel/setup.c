@@ -220,6 +220,8 @@ static void __init smp_build_mpidr_hash(void)
 		pr_warn("Large number of MPIDR hash buckets detected\n");
 }
 
+#include <linux/gta4xl_debug.h>
+
 static void __init setup_machine_fdt(phys_addr_t dt_phys)
 {
 	int size;
@@ -344,6 +346,7 @@ void __init setup_arch(char **cmdline_p)
 
 	early_fixmap_init();
 	early_ioremap_init();
+	gta4xl_early_ramlog_init();	/* no UART on gta4xl: see gta4xl_early_ramlog.c */
 
 	setup_machine_fdt(__fdt_pointer);
 
@@ -353,6 +356,7 @@ void __init setup_arch(char **cmdline_p)
 	 */
 	jump_label_init();
 	parse_early_param();
+	gta4xl_checkpoint(1, "setup_arch: after parse_early_param");
 
 	/*
 	 * Unmask asynchronous aborts and fiq after bringing up possible

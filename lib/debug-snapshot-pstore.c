@@ -226,9 +226,16 @@ EXPORT_SYMBOL(dbg_snapshot_hook_pmsg);
  *  dss_ramoops platform_device is used by pstore fs.
  */
 
+/*
+ * gta4xl: same zone layout as its 4.14 kernel (which also runs in recovery), so that the
+ * console log of a 4.19 boot that failed can be read as console-ramoops-0 after booting 4.14.
+ * This tree had 4K dump and pmsg zones and no console zone.
+ */
 static struct ramoops_platform_data dss_ramoops_data = {
-	.record_size	= SZ_4K,
-	.pmsg_size	= SZ_4K,
+	.record_size	= SZ_512K,
+	.console_size	= SZ_512K,
+	.ftrace_size	= SZ_512K,
+	.pmsg_size	= SZ_512K,
 	.dump_oops	= 1,
 };
 
@@ -239,13 +246,18 @@ static struct platform_device dss_ramoops = {
 	},
 };
 
+#include <linux/gta4xl_debug.h>
+
 static int __init dss_pstore_init(void)
 {
+	if (gta4xl_early_ramlog_active()) {
+		gta4xl_checkpoint(40, "dss_pstore_init: ramoops not registered, early console keeps the zone");
+		return 0;
+	}
 	if (dbg_snapshot_get_enable_item("log_pstore")) {
 		dss_ramoops_data.mem_size = dbg_snapshot_get_item_size("log_pstore");
 		dss_ramoops_data.mem_address = dbg_snapshot_get_item_paddr("log_pstore");
-		dss_ramoops_data.pmsg_size = dss_ramoops_data.mem_size / 2;
-		dss_ramoops_data.record_size = dss_ramoops_data.mem_size / 2;
+		/* gta4xl: zone sizes stay as initialised above (the 4.14 layout), not mem_size / 2 */
 	}
 	return platform_device_register(&dss_ramoops);
 }
@@ -254,7 +266,7 @@ static void __exit dss_pstore_exit(void)
 {
 	platform_device_unregister(&dss_ramoops);
 }
-module_init(dss_pstore_init);
+postcore_initcall_sync(dss_pstore_init);	/* was module_init: console log from the start of the initcalls */
 module_exit(dss_pstore_exit);
 
 MODULE_DESCRIPTION("Exynos Snapshot pstore module");

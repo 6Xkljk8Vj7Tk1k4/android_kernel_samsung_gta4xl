@@ -11,6 +11,7 @@
 
 #define DEBUG		/* Enable initcall_debug */
 
+#include <linux/gta4xl_debug.h>
 #include <linux/types.h>
 #include <linux/extable.h>
 #include <linux/module.h>
@@ -598,6 +599,7 @@ asmlinkage __visible void __init start_kernel(void)
 	page_address_init();
 	pr_notice("%s", linux_banner);
 	setup_arch(&command_line);
+	gta4xl_checkpoint(2, "start_kernel: after setup_arch");
 	mm_init_cpumask(&init_mm);
 	setup_command_line(command_line);
 	setup_nr_cpu_ids();
@@ -635,6 +637,7 @@ asmlinkage __visible void __init start_kernel(void)
 	sort_main_extable();
 	trap_init();
 	mm_init();
+	gta4xl_checkpoint(3, "start_kernel: after mm_init");
 	ftrace_init();
 
 	/* trace_printk can be enabled here */
@@ -646,6 +649,7 @@ asmlinkage __visible void __init start_kernel(void)
 	 * time - but meanwhile we still have a functioning scheduler.
 	 */
 	sched_init();
+	gta4xl_checkpoint(4, "start_kernel: after sched_init");
 	/*
 	 * Disable preemption - early bootup scheduling is extremely
 	 * fragile until we cpu_idle() for the first time.
@@ -681,6 +685,7 @@ asmlinkage __visible void __init start_kernel(void)
 	/* init some links before init_ISA_irqs() */
 	early_irq_init();
 	init_IRQ();
+	gta4xl_checkpoint(5, "start_kernel: after init_IRQ");
 	tick_init();
 	rcu_init_nohz();
 	init_timers();
@@ -688,6 +693,7 @@ asmlinkage __visible void __init start_kernel(void)
 	softirq_init();
 	timekeeping_init();
 	time_init();
+	gta4xl_checkpoint(6, "start_kernel: after time_init");
 
 	/* This must be after timekeeping is initialized */
 	random_init();
@@ -712,6 +718,7 @@ asmlinkage __visible void __init start_kernel(void)
 	 * this. But we do want output early, in case something goes wrong.
 	 */
 	console_init();
+	gta4xl_checkpoint(7, "start_kernel: after console_init");
 	if (panic_later)
 		panic("Too many boot %s vars at `%s'", panic_later,
 		      panic_param);
@@ -782,6 +789,7 @@ asmlinkage __visible void __init start_kernel(void)
 	}
 
 	/* Do the rest non-__init'ed, we're now alive */
+	gta4xl_checkpoint(8, "start_kernel: before rest_init");
 	rest_init();
 
 	prevent_tail_call_optimization();
@@ -1039,6 +1047,7 @@ static void __init do_initcall_level(int level)
 		   NULL, &repair_env_string);
 
 	trace_initcall_level(initcall_level_names[level]);
+	gta4xl_checkpoint(20 + level, initcall_level_names[level]);
 	for (fn = initcall_levels[level]; fn < initcall_levels[level+1]; fn++)
 		do_one_initcall(initcall_from_entry(fn));
 
@@ -1242,10 +1251,12 @@ static noinline void __init kernel_init_freeable(void)
 
 	init_mm_internals();
 
+	gta4xl_checkpoint(9, "kernel_init: before early initcalls");
 	do_pre_smp_initcalls();
 	lockup_detector_init();
 
 	smp_init();
+	gta4xl_checkpoint(10, "kernel_init: after smp_init");
 	sched_init_smp();
 
 	page_alloc_init_late();
@@ -1253,6 +1264,7 @@ static noinline void __init kernel_init_freeable(void)
 	page_ext_init();
 
 	do_basic_setup();
+	gta4xl_checkpoint(30, "kernel_init: after do_basic_setup (all initcalls)");
 
 	/* Open the /dev/console on the rootfs, this should never fail */
 	if (ksys_open((const char __user *) "/dev/console", O_RDWR, 0) < 0)

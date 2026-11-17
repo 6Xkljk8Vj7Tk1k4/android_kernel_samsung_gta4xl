@@ -23,6 +23,7 @@
 #include <linux/types.h>
 #include <linux/timer.h>
 #include <linux/watchdog.h>
+#include <linux/gta4xl_debug.h>
 #include <linux/platform_device.h>
 #include <linux/interrupt.h>
 #include <linux/clk.h>
@@ -1710,6 +1711,18 @@ static int s3c2410wdt_probe(struct platform_device *pdev)
 
 	dev_info(dev, "Multistage watchdog %sabled",
 		wdt->use_multistage_wdt ? "en" : "dis");
+
+	/*
+	 * A gta4xl test boot (gta4xl_test, see gta4xl_early_ramlog.c) ends by itself after its
+	 * timer. If it hangs hard instead, this watchdog, kicked only by a kernel timer there,
+	 * resets the SoC.
+	 */
+	if (cluster_index == LITTLE_CLUSTER && gta4xl_test_boot()) {
+		if (!s3c2410wdt_set_heartbeat(&wdt->wdt_device, 45)) {
+			s3c2410wdt_start(&wdt->wdt_device);
+			dev_info(dev, "gta4xl test boot: watchdog reset in 45 s\n");
+		}
+	}
 
 	return 0;
 

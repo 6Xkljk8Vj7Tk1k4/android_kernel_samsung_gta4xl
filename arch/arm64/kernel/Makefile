@@ -76,3 +76,4 @@ extra-y					+= $(head-y) vmlinux.lds
 ifeq ($(CONFIG_DEBUG_EFI),y)
 AFLAGS_head.o += -DVMLINUX_PATH="\"$(realpath $(objtree)/vmlinux)\""
 endif
+obj-$(CONFIG_GTA4XL_RAMLOG)		+= gta4xl_early_ramlog.o

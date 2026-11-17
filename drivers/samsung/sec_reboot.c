@@ -15,6 +15,7 @@
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/input.h>
+#include <linux/gta4xl_debug.h>
 #endif
 
 #include "./debug/sec_debug_internal.h"
@@ -268,6 +269,7 @@ static void sec_power_off(void)
 
 	local_irq_disable();
 
+	gta4xl_power_off_mark();	/* this boot ends by itself, see gta4xl_early_ramlog.c */
 	sec_set_reboot_magic(SEC_REBOOT_LPM, SEC_REBOOT_END_OFFSET, 0xFF);
 #ifdef CONFIG_BATTERY_SAMSUNG
 	psy_do_property("ac", get, POWER_SUPPLY_PROP_ONLINE, ac_val);

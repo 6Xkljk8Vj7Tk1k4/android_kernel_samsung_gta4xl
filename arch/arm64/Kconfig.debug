@@ -16,6 +16,21 @@ config ARM64_PTDUMP_DEBUGFS
 
 	  If in doubt, say N.
 
+config GTA4XL_RAMLOG
+	bool "RAM log, checkpoints and reset handling for the Galaxy Tab S6 Lite (gta4xl)"
+	depends on SOC_EXYNOS9610
+	help
+	  The Galaxy Tab S6 Lite has no accessible UART. With this option every
+	  printk line is also written into the pstore console zone of the board,
+	  the log of the start before is kept in /proc/gta4xl_last_kmsg, a panic
+	  restarts the system the way the board's bootloader expects, and a kernel
+	  that cannot come up ends in the recovery instead of a boot loop. Test
+	  boots (gta4xl_test on the command line) end in the recovery whatever
+	  happens. See arch/arm64/kernel/gta4xl_early_ramlog.c.
+
+	  The addresses are those of this board's device tree: say N for any
+	  other Exynos 9610/9611 board.
+
 config PID_IN_CONTEXTIDR
 	bool "Write the current PID to the CONTEXTIDR register"
 	help
