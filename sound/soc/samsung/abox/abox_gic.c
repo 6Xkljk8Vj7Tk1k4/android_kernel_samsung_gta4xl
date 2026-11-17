@@ -8,7 +8,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
-
+/* #define DEBUG */
 #include <linux/clk.h>
 #include <linux/io.h>
 #include <linux/module.h>
@@ -23,163 +23,23 @@
 #include "abox_util.h"
 #include "abox_gic.h"
 
-#define VERBOSE 0
-
-static int gicd_xwritel(struct abox_gic_data *data, u32 value,
-		unsigned int offset)
-{
-	unsigned long arg1;
-	int ret = 0;
-
-	if (is_secure_gic()) {
-		offset += data->gicd_base_phys;
-		arg1 = SMC_REG_ID_SFR_W(offset);
-		ret = exynos_smc(SMC_CMD_REG, arg1, value, 0);
-		if (ret < 0)
-			dev_err(data->dev, "write fail %#x: %d\n", offset, ret);
-		if (VERBOSE) {
-			unsigned long val = 0xfafafafa;
-
-			exynos_smc_readsfr(offset, &val);
-			dev_dbg(data->dev, "%#x %#lx\n", offset, val);
-		}
-	} else {
-		writel(value, data->gicd_base + offset);
-	}
-
-	return ret;
-}
-
-static int gicc_xwritel(struct abox_gic_data *data, u32 value,
-		unsigned int offset)
-{
-	unsigned long arg1;
-	int ret = 0;
-
-	if (is_secure_gic()) {
-		offset += data->gicc_base_phys;
-		arg1 = SMC_REG_ID_SFR_W(offset);
-		ret = exynos_smc(SMC_CMD_REG, arg1, value, 0);
-		if (ret < 0)
-			dev_err(data->dev, "write fail %#x: %d\n", offset, ret);
-		if (VERBOSE) {
-			unsigned long val = 0xfafafafa;
-
-			exynos_smc_readsfr(offset, &val);
-			dev_dbg(data->dev, "%#x %#lx\n", offset, val);
-		}
-	} else {
-		writel(value, data->gicc_base + offset);
-	}
-
-	return ret;
-}
-
-static u32 gicd_xreadl(struct abox_gic_data *data, unsigned int offset)
-{
-	u32 value;
-
-	if (is_secure_gic()) {
-		unsigned long val;
-		int ret;
-
-		offset += data->gicd_base_phys;
-		ret = exynos_smc_readsfr(offset, &val);
-		if (ret < 0) {
-			dev_err(data->dev, "read fail %#x: %d\n", offset, ret);
-			return 0;
-		}
-
-		value = (u32)val;
-
-		if (VERBOSE)
-			dev_dbg(data->dev, "%#x %#lx\n", offset, val);
-	} else {
-		value = readl(data->gicd_base + offset);
-	}
-
-	return value;
-}
-
-static u32 gicc_xreadl(struct abox_gic_data *data, unsigned int offset)
-{
-	u32 value;
-
-	if (is_secure_gic()) {
-		unsigned long val;
-		int ret;
-
-		offset += data->gicc_base_phys;
-		ret = exynos_smc_readsfr(offset, &val);
-		if (ret < 0) {
-			dev_err(data->dev, "read fail %#x: %d\n", offset, ret);
-			return 0;
-		}
-
-		value = (u32)val;
-
-		if (VERBOSE)
-			dev_dbg(data->dev, "%#x %#lx\n", offset, val);
-	} else {
-		value = readl(data->gicc_base + offset);
-	}
-
-	return value;
-}
-
-void abox_gicd_dump(struct device *dev, char *dump, size_t off, size_t size)
-{
-	struct abox_gic_data *data = dev_get_drvdata(dev);
-	size_t limit = min(off + size, data->gicd_size);
-	u32 *buf = (u32 *)dump;
-
-	for (; off < limit; off += 4)
-		*buf++ = gicd_xreadl(data, off);
-}
-
-void abox_gic_enable(struct device *dev, unsigned int irq, bool en)
-{
-	struct abox_gic_data *data = dev_get_drvdata(dev);
-	unsigned int base = en ? GIC_DIST_ENABLE_SET : GIC_DIST_ENABLE_CLEAR;
-	unsigned int offset = base + (irq / 32 * 4);
-	unsigned int shift = irq % 32;
-	unsigned int mask = 0x1 << shift;
-	static DEFINE_SPINLOCK(lock);
-	unsigned long flags;
-
-	spin_lock_irqsave(&lock, flags);
-	gicd_xwritel(data, mask, offset);
-	spin_unlock_irqrestore(&lock, flags);
-}
-
-void abox_gic_target(struct device *dev, unsigned int irq,
-		enum abox_gic_target target)
-{
-	struct abox_gic_data *data = dev_get_drvdata(dev);
-	unsigned int offset = GIC_DIST_TARGET + (irq & 0xfffffffc);
-	unsigned int shift = (irq & 0x3) * 8;
-	unsigned int mask = 0xff << shift;
-	unsigned int val;
-	static DEFINE_SPINLOCK(lock);
-	unsigned long flags;
-
-	dev_dbg(dev, "%s(%d, %d)\n", __func__, irq, target);
-
-	spin_lock_irqsave(&lock, flags);
-	val = gicd_xreadl(data, offset);
-	val &= ~mask;
-	val |= ((0x1 << target) << shift) & mask;
-	gicd_xwritel(data, val, offset);
-	spin_unlock_irqrestore(&lock, flags);
-}
+#define GIC_IS_SECURE_FREE
 
 void abox_gic_generate_interrupt(struct device *dev, unsigned int irq)
 {
+#ifdef GIC_IS_SECURE_FREE
 	struct abox_gic_data *data = dev_get_drvdata(dev);
-
+#endif
 	dev_dbg(dev, "%s(%d)\n", __func__, irq);
-
-	writel((0x1 << 16) | (irq & 0xf), data->gicd_base + GIC_DIST_SOFTINT);
+#ifdef GIC_IS_SECURE_FREE
+	writel((0x1 << 16) | (irq & 0xF),
+			data->gicd_base + GIC_DIST_SOFTINT);
+#else
+	dev_dbg(dev, "exynos_smc() is called\n");
+	exynos_smc(SMC_CMD_REG,
+			SMC_REG_ID_SFR_W(0x13EF1000 + GIC_DIST_SOFTINT),
+			(0x1 << 16) | (hw_irq & 0xF), 0);
+#endif
 }
 EXPORT_SYMBOL(abox_gic_generate_interrupt);
 
@@ -188,15 +48,15 @@ int abox_gic_register_irq_handler(struct device *dev, unsigned int irq,
 {
 	struct abox_gic_data *data = dev_get_drvdata(dev);
 
-	dev_dbg(dev, "%s(%u, %ps)\n", __func__, irq, handler);
+	dev_info(dev, "%s(%u, %pf)\n", __func__, irq, handler);
 
 	if (irq >= ARRAY_SIZE(data->handler)) {
 		dev_err(dev, "invalid irq: %d\n", irq);
 		return -EINVAL;
 	}
 
-	WRITE_ONCE(data->handler[irq].handler, handler);
-	WRITE_ONCE(data->handler[irq].dev_id, dev_id);
+	data->handler[irq].handler = handler;
+	data->handler[irq].dev_id = dev_id;
 
 	return 0;
 }
@@ -206,15 +66,15 @@ int abox_gic_unregister_irq_handler(struct device *dev, unsigned int irq)
 {
 	struct abox_gic_data *data = dev_get_drvdata(dev);
 
-	dev_dbg(dev, "%s(%u)\n", __func__, irq);
+	dev_info(dev, "%s(%u)\n", __func__, irq);
 
 	if (irq >= ARRAY_SIZE(data->handler)) {
 		dev_err(dev, "invalid irq: %d\n", irq);
 		return -EINVAL;
 	}
 
-	WRITE_ONCE(data->handler[irq].handler, NULL);
-	WRITE_ONCE(data->handler[irq].dev_id, NULL);
+	data->handler[irq].handler = NULL;
+	data->handler[irq].dev_id = NULL;
 
 	return 0;
 }
@@ -222,18 +82,16 @@ EXPORT_SYMBOL(abox_gic_unregister_irq_handler);
 
 static irqreturn_t __abox_gic_irq_handler(struct abox_gic_data *data, u32 irqnr)
 {
-	irq_handler_t handler;
-	void *dev_id;
+	struct abox_gic_irq_handler_t *handler;
 
 	if (irqnr >= ARRAY_SIZE(data->handler))
 		return IRQ_NONE;
 
-	dev_id = READ_ONCE(data->handler[irqnr].dev_id);
-	handler = READ_ONCE(data->handler[irqnr].handler);
-	if (!handler)
+	handler = &data->handler[irqnr];
+	if (!handler->handler)
 		return IRQ_NONE;
 
-	return handler(irqnr, dev_id);
+	return handler->handler(irqnr, handler->dev_id);
 }
 
 static irqreturn_t abox_gic_irq_handler(int irq, void *dev_id)
@@ -246,17 +104,17 @@ static irqreturn_t abox_gic_irq_handler(int irq, void *dev_id)
 	dev_dbg(dev, "%s\n", __func__);
 
 	do {
-		irqstat = gicc_xreadl(data, GIC_CPU_INTACK);
+		irqstat = readl(data->gicc_base + GIC_CPU_INTACK);
 		irqnr = irqstat & GICC_IAR_INT_ID_MASK;
 		dev_dbg(dev, "IAR: %08X\n", irqstat);
 
-		if (irqnr < 16) {
-			gicc_xwritel(data, irqstat, GIC_CPU_EOI);
-			gicc_xwritel(data, irqstat, GIC_CPU_DEACTIVATE);
+		if (likely(irqnr < 16)) {
+			writel(irqstat, data->gicc_base + GIC_CPU_EOI);
+			writel(irqstat, data->gicc_base + GIC_CPU_DEACTIVATE);
 			ret |= __abox_gic_irq_handler(data, irqnr);
 			continue;
-		} else if (irqnr > 15 && irqnr < 1021) {
-			gicc_xwritel(data, irqstat, GIC_CPU_EOI);
+		} else if (unlikely(irqnr > 15 && irqnr < 1021)) {
+			writel(irqstat, data->gicc_base + GIC_CPU_EOI);
 			ret |= __abox_gic_irq_handler(data, irqnr);
 			continue;
 		}
@@ -271,18 +129,63 @@ static void abox_gicd_enable(struct device *dev, bool en)
 	struct abox_gic_data *data = dev_get_drvdata(dev);
 	void __iomem *gicd_base = data->gicd_base;
 
-	writel(en ? 0x1 : 0x0, gicd_base + GIC_DIST_CTRL);
+	if (en) {
+		writel(0x1, gicd_base + GIC_DIST_CTRL);
+		writel(0x0, gicd_base + GIC_DIST_IGROUP + 0x0);
+		writel(0x0, gicd_base + GIC_DIST_IGROUP + 0x4);
+		writel(0x0, gicd_base + GIC_DIST_IGROUP + 0x8);
+		writel(0x0, gicd_base + GIC_DIST_IGROUP + 0xC);
+		/* Todo: check whether it is really needed
+		 * writel(0xc, gicd_base + GIC_DIST_ENABLE_SET + 0x4);
+		 */
+		dev_dbg(dev, "[WRITE]GICD_ISENABLE:en	: 0x%x\n",
+				readl(gicd_base + GIC_DIST_ENABLE_SET + 0x4));
+	} else {
+		writel(0x0, gicd_base + GIC_DIST_CTRL);
+		/* Todo: check whether it is really needed
+		 * writel(0xc, gicd_base + GIC_DIST_ENABLE_CLEAR + 0x4);
+		 */
+		dev_dbg(dev, "[WRITE]GICD_ISENABLE:dis	: 0x%x\n",
+				readl(gicd_base + GIC_DIST_ENABLE_SET + 0x4));
+	}
 }
 
 void abox_gic_init_gic(struct device *dev)
 {
 	struct abox_gic_data *data = dev_get_drvdata(dev);
+	unsigned long arg;
+	int i, ret;
 
-	dev_dbg(dev, "%s\n", __func__);
+	dev_info(dev, "%s\n", __func__);
 
-	gicc_xwritel(data, 0xff, GIC_CPU_PRIMASK);
-	gicd_xwritel(data, 0x3, GIC_DIST_CTRL);
-	gicc_xwritel(data, 0x3, GIC_CPU_CTRL);
+#ifdef GIC_IS_SECURE_FREE
+	writel(0x000000FF, data->gicc_base + GIC_CPU_PRIMASK);
+	writel(0x3, data->gicd_base + GIC_DIST_CTRL);
+#else
+	arg = SMC_REG_ID_SFR_W(data->gicc_base_phys + GIC_CPU_PRIMASK);
+	ret = exynos_smc(SMC_CMD_REG, arg, 0x000000FF, 0);
+
+	arg = SMC_REG_ID_SFR_W(data->gicd_base_phys + GIC_DIST_CTRL);
+	ret = exynos_smc(SMC_CMD_REG, arg, 0x3, 0);
+#endif
+	if (is_secure_gic()) {
+		for (i = 0; i < 1; i++) {
+			arg = SMC_REG_ID_SFR_W(data->gicd_base_phys +
+					GIC_DIST_IGROUP + (i * 4));
+			ret = exynos_smc(SMC_CMD_REG, arg, 0xFFFFFFFF, 0);
+		}
+	}
+	for (i = 0; i < 40; i++) {
+#ifdef GIC_IS_SECURE_FREE
+		writel(0x10101010, data->gicd_base + GIC_DIST_PRI + (i * 4));
+#else
+		arg = SMC_REG_ID_SFR_W(data->gicd_base_phys +
+				GIC_DIST_PRI + (i * 4));
+		ret = exynos_smc(SMC_CMD_REG, arg, 0x10101010, 0);
+#endif
+	}
+
+	writel(0x3, data->gicc_base + GIC_CPU_CTRL);
 }
 EXPORT_SYMBOL(abox_gic_init_gic);
 
@@ -291,7 +194,7 @@ int abox_gic_enable_irq(struct device *dev)
 	struct abox_gic_data *data = dev_get_drvdata(dev);
 
 	if (likely(data->disabled)) {
-		dev_dbg(dev, "%s\n", __func__);
+		dev_info(dev, "%s\n", __func__);
 
 		data->disabled = false;
 		enable_irq(data->irq);
@@ -305,7 +208,7 @@ int abox_gic_disable_irq(struct device *dev)
 	struct abox_gic_data *data = dev_get_drvdata(dev);
 
 	if (likely(!data->disabled)) {
-		dev_dbg(dev, "%s\n", __func__);
+		dev_info(dev, "%s\n", __func__);
 
 		data->disabled = true;
 		disable_irq(data->irq);
@@ -320,22 +223,20 @@ static int samsung_abox_gic_probe(struct platform_device *pdev)
 	struct abox_gic_data *data;
 	int ret;
 
-	dev_dbg(dev, "%s\n", __func__);
+	dev_info(dev, "%s\n", __func__);
 
 	data = devm_kzalloc(dev, sizeof(struct abox_gic_data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
 	platform_set_drvdata(pdev, data);
 
-	data->dev = &pdev->dev;
-
-	data->gicd_base = devm_get_request_ioremap(pdev, "gicd",
-			&data->gicd_base_phys, &data->gicd_size);
+	data->gicd_base = devm_request_and_map_byname(pdev, "gicd",
+			&data->gicd_base_phys, NULL);
 	if (IS_ERR(data->gicd_base))
 		return PTR_ERR(data->gicd_base);
 
-	data->gicc_base = devm_get_request_ioremap(pdev, "gicc",
-			&data->gicc_base_phys, &data->gicc_size);
+	data->gicc_base = devm_request_and_map_byname(pdev, "gicc",
+			&data->gicc_base_phys, NULL);
 	if (IS_ERR(data->gicc_base))
 		return PTR_ERR(data->gicc_base);
 
@@ -346,8 +247,7 @@ static int samsung_abox_gic_probe(struct platform_device *pdev)
 	}
 
 	ret = devm_request_irq(dev, data->irq, abox_gic_irq_handler,
-			IRQF_TRIGGER_RISING | IRQF_GIC_MULTI_TARGET,
-			pdev->name, dev);
+		IRQF_TRIGGER_RISING, pdev->name, dev);
 	if (ret < 0) {
 		dev_err(dev, "Failed to request irq\n");
 		return ret;
@@ -357,24 +257,24 @@ static int samsung_abox_gic_probe(struct platform_device *pdev)
 	if (ret < 0)
 		dev_err(dev, "Failed to enable irq wake\n");
 
-	/* Check and cache whether the gic is secure or not */
-	is_secure_gic();
-
-	dev_dbg(dev, "%s: probe complete\n", __func__);
+#ifndef CONFIG_PM
+	abox_gic_resume(dev);
+#endif
+	dev_info(dev, "%s: probe complete\n", __func__);
 
 	return 0;
 }
 
 static int samsung_abox_gic_remove(struct platform_device *pdev)
 {
-	dev_dbg(&pdev->dev, "%s\n", __func__);
+	dev_info(&pdev->dev, "%s\n", __func__);
 
 	return 0;
 }
 
 static const struct of_device_id samsung_abox_gic_of_match[] = {
 	{
-		.compatible = "samsung,abox-gic",
+		.compatible = "samsung,abox_gic",
 	},
 	{},
 };

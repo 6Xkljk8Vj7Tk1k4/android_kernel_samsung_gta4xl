@@ -21,12 +21,6 @@
 #ifndef _SEC_AUDIO_DEBUG_H
 #define _SEC_AUDIO_DEBUG_H
 
-enum rmem_size_type {
-	TYPE_ABOX_DBG_SIZE,
-	TYPE_ABOX_SLOG_SIZE,
-	TYPE_SIZE_MAX,
-};
-
 struct sec_audio_log_data {
 	ssize_t buff_idx;
 	int full;
@@ -48,11 +42,6 @@ enum abox_debug_err_type {
 };
 
 #ifdef CONFIG_SND_SOC_SAMSUNG_AUDIO
-
-void abox_log_extra_copy(char *src_base, unsigned int index_reader,
-					unsigned int index_writer, unsigned int src_buff_size);
-void abox_log_extra_update(void);
-
 int is_abox_rdma_enabled(int id);
 int is_abox_wdma_enabled(int id);
 void abox_debug_string_update(enum abox_debug_err_type type, void *addr);
@@ -65,13 +54,9 @@ void adev_dbg(struct device *dev, const char *fmt, ...);
 int register_debug_mixer(struct snd_soc_card *card);
 int alloc_sec_audio_log(struct sec_audio_log_data *p_dbg_log_data, size_t buffer_len);
 
-void sec_audio_log(int level, struct device *dev, const char *fmt, ...);
-void sec_audio_bootlog(int level, struct device *dev, const char *fmt, ...);
-void sec_audio_pmlog(int level, struct device *dev, const char *fmt, ...);
-
-int check_upload_mode_disabled(void);
-int check_debug_level_low(void);
-size_t get_rmem_size_min(enum rmem_size_type id);
+void sec_audio_log(int level, const char *fmt, ...);
+void sec_audio_bootlog(int level, const char *fmt, ...);
+void sec_audio_pmlog(int level, const char *fmt, ...);
 
 #ifdef CHANGE_DEV_PRINT
 #ifdef dev_err
@@ -124,31 +109,16 @@ inline void free_sec_audio_log(struct sec_audio_log_data *p_dbg_log_data)
 {
 }
 
-inline void sec_audio_log(int level, struct device *dev, const char *fmt, ...)
+inline void sec_audio_log(int level, const char *fmt, ...)
 {
 }
 
-inline void sec_audio_bootlog(int level, struct device *dev, const char *fmt, ...)
+inline void sec_audio_bootlog(int level, const char *fmt, ...)
 {
 }
 
-inline void sec_audio_pmlog(int level, struct device *dev, const char *fmt, ...)
+inline void sec_audio_pmlog(int level, const char *fmt, ...)
 {
-}
-
-inline int check_upload_mode_disabled(void)
-{
-	return -EACCES;
-}
-
-inline int check_debug_level_low(void);
-{
-	return -EACCES;
-}
-
-inline size_t get_rmem_size_min(enum rmem_size_type id)
-{
-	return -EACCES;
 }
 
 #endif /* CONFIG_SND_SOC_SAMSUNG_AUDIO */

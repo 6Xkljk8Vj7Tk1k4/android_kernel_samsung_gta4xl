@@ -1396,6 +1396,16 @@ config TAS2562_REGMAP
 	 IRQ processing, registers read and write
 	 by i2c operations.
 
+config PLATFORM_EXYNOS
+	bool "TAS2562 on the Exynos 9610 audio bus (ABOX)"
+	depends on SND_SOC_TAS2562
+	help
+	  The 4.14 Exynos 9610 tree builds its TAS2562 driver with this option: the
+	  amplifier then sends its current/voltage sense data one bit clock later
+	  (TDM configuration register 4 = 0x13/0x03 instead of 0x11/0x01), which is
+	  what the ABOX of that SoC samples. The option was lost when the driver moved
+	  under the Kconfig of this tree.
+
 config TAS2562_CODEC
 	bool "Codec Driver support"
 	help

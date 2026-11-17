@@ -74,4 +74,6 @@ obj-$(CONFIG_SND_SOC_SAMSUNG_EXYNOS9830_MADERA) += exynos9830_madera.o
 obj-$(CONFIG_SND_SOC_SAMSUNG_EXYNOS9630_SOUND) += exynos9630_sound.o
 obj-$(CONFIG_SND_SOC_SAMSUNG_EXYNOS3830_SOUND) += exynos3830_sound.o
 obj-$(CONFIG_SND_SOC_SAMSUNG_EXYNOS3830_AUD3004X) += snd-soc-exynos3830-aud3004x.o
+snd-soc-vogue-rt5665-objs := vogue-rt5665.o jack_rt5665_sysfs_cb.o
+obj-$(CONFIG_SND_SOC_SAMSUNG_VOGUE_RT5665) += snd-soc-vogue-rt5665.o
 obj-$(CONFIG_SND_SOC_SAMSUNG_AUDIO) += sec_audio_sysfs.o sec_audio_debug.o

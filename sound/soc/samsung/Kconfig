@@ -303,6 +303,20 @@ config SND_SOC_SAMSUNG_TM2_WM5110
 	help
 	  Say Y if you want to add support for SoC audio on the TM2 board.
 
+config SND_SOC_SAMSUNG_EXYNOS9610
+	tristate "Audio support on exynos9610"
+	select SND_SOC_SAMSUNG_ABOX
+	help
+	  Say Y if you want to add support for audio on the Exynos9610
+	  (ABOX v1, the driver of the 4.14 kernel).
+
+config SND_SOC_SAMSUNG_VOGUE_RT5665
+	tristate "Audio support for RT5665 on VOGUE"
+	select SND_SOC_RT5665
+	help
+	  Machine driver of the Exynos9610 boards with an RT5665 codec
+	  (Galaxy Tab S6 Lite among them).
+
 config SND_SOC_SAMSUNG_AUDIO
 	tristate "Audio support for Samsung Projects"
 	help
