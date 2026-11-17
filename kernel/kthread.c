@@ -504,6 +504,15 @@ void kthread_unpark(struct task_struct *k)
 	struct kthread *kthread = to_kthread(k);
 
 	/*
+	 * Not asked to park, so not parked: nothing to undo. kthread_stop() calls this for
+	 * every thread, and the rebind below waits for TASK_PARKED, which a running per-cpu
+	 * thread never reaches: it warned once per CPU whenever a driver stopped its per-cpu
+	 * threads with the CPUs online (tzdev does at every restart).
+	 */
+	if (!test_bit(KTHREAD_SHOULD_PARK, &kthread->flags))
+		return;
+
+	/*
 	 * Newly created kthread was parked when the CPU was offline.
 	 * The binding was lost and we need to set it again.
 	 */
