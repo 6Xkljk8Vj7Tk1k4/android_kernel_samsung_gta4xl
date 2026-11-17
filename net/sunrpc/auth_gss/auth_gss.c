@@ -45,6 +45,7 @@
 #include <linux/sunrpc/clnt.h>
 #include <linux/sunrpc/auth.h>
 #include <linux/sunrpc/auth_gss.h>
+#include <linux/sunrpc/gss_krb5.h>
 #include <linux/sunrpc/svcauth_gss.h>
 #include <linux/sunrpc/gss_err.h>
 #include <linux/workqueue.h>
@@ -60,6 +61,8 @@ static const struct rpc_authops authgss_ops;
 
 static const struct rpc_credops gss_credops;
 static const struct rpc_credops gss_nullops;
+
+static void gss_free_callback(struct kref *kref);
 
 #define GSS_RETRY_EXPIRED 5
 static unsigned int gss_expired_cred_retry_delay = GSS_RETRY_EXPIRED;
@@ -524,6 +527,7 @@ gss_alloc_msg(struct gss_auth *gss_auth,
 	kref_get(&gss_auth->kref);
 	return gss_msg;
 err_put_pipe_version:
+	kref_put(&gss_auth->kref, gss_free_callback);
 	put_pipe_version(gss_auth->net);
 err_free_msg:
 	kfree(gss_msg);
@@ -1949,7 +1953,11 @@ gss_unwrap_resp_priv(struct rpc_cred *cred, struct gss_cl_ctx *ctx,
 
 	opaque_len = ntohl(*(*p)++);
 	offset = (u8 *)(*p) - (u8 *)rcv_buf->head[0].iov_base;
-	if (offset + opaque_len > rcv_buf->len)
+	if (offset > rcv_buf->len)
+		return status;
+	if (opaque_len > rcv_buf->len - offset)
+		return status;
+	if (opaque_len <= GSS_KRB5_TOK_HDR_LEN)
 		return status;
 	/* remove padding: */
 	rcv_buf->len = offset + opaque_len;

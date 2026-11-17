@@ -214,8 +214,10 @@ static struct inode *ocfs2_get_init_inode(struct inode *dir, umode_t mode)
 		set_nlink(inode, 2);
 	inode_init_owner(inode, dir, mode);
 	status = dquot_initialize(inode);
-	if (status)
+	if (status) {
+		iput(inode);
 		return ERR_PTR(status);
+	}
 
 	return inode;
 }
@@ -262,6 +264,7 @@ static int ocfs2_mknod(struct inode *dir,
 	sigset_t oldset;
 	int did_block_signals = 0;
 	struct ocfs2_dentry_lock *dl = NULL;
+	struct ocfs2_acl_state acl_state = { 0 };
 
 	trace_ocfs2_mknod(dir, dentry, dentry->d_name.len, dentry->d_name.name,
 			  (unsigned long long)OCFS2_I(dir)->ip_blkno,
@@ -336,14 +339,13 @@ static int ocfs2_mknod(struct inode *dir,
 		}
 	}
 
-	/* calculate meta data/clusters for setting security and acl xattr */
-	status = ocfs2_calc_xattr_init(dir, parent_fe_bh, mode,
-				       &si, &want_clusters,
-				       &xattr_credits, &want_meta);
-	if (status < 0) {
-		mlog_errno(status);
+	status = ocfs2_acl_init_prepare(inode, dir, parent_fe_bh, &acl_state);
+	if (status < 0)
 		goto leave;
-	}
+
+	/* calculate meta data/clusters for setting security and acl xattr */
+	ocfs2_calc_xattr_init(dir, mode, &si, &want_clusters, &xattr_credits,
+			      &want_meta, &acl_state);
 
 	/* Reserve a cluster if creating an extent based directory. */
 	if (S_ISDIR(mode) && !ocfs2_supports_inline_data(osb)) {
@@ -417,8 +419,8 @@ static int ocfs2_mknod(struct inode *dir,
 		inc_nlink(dir);
 	}
 
-	status = ocfs2_init_acl(handle, inode, dir, new_fe_bh, parent_fe_bh,
-			 meta_ac, data_ac);
+	status = ocfs2_init_acl(handle, inode, new_fe_bh, meta_ac, data_ac,
+				&acl_state);
 
 	if (status < 0) {
 		mlog_errno(status);
@@ -476,6 +478,8 @@ leave:
 	brelse(parent_fe_bh);
 	kfree(si.value);
 
+	ocfs2_acl_init_release(&acl_state);
+
 	ocfs2_free_dir_lookup_result(&lookup);
 
 	if (inode_ac)
@@ -488,7 +492,7 @@ leave:
 		ocfs2_free_alloc_context(meta_ac);
 
 	/*
-	 * We should call iput after the i_mutex of the bitmap been
+	 * We should call iput after the i_rwsem of the bitmap been
 	 * unlocked in ocfs2_free_alloc_context, or the
 	 * ocfs2_delete_inode will mutex_lock again.
 	 */

@@ -728,6 +728,7 @@ static bool __inet_csk_reqsk_queue_drop(struct sock *sk,
 		reqsk_queue_removed(&inet_csk(sk)->icsk_accept_queue, req);
 		reqsk_put(req);
 	}
+
 	return unlinked;
 }
 
@@ -925,6 +926,8 @@ void inet_csk_prepare_forced_close(struct sock *sk)
 	sock_put(sk);
 
 	/* The below has to be done to allow calling inet_csk_destroy_sock */
+	if (sk->sk_protocol == IPPROTO_TCP)
+		tcp_clear_sock_ops_cb_flags(sk);
 	sock_set_flag(sk, SOCK_DEAD);
 	percpu_counter_inc(sk->sk_prot->orphan_count);
 	inet_sk(sk)->inet_num = 0;
