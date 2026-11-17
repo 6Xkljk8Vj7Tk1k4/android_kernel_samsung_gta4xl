@@ -78,6 +78,26 @@ static __always_inline u64 __arch_get_hw_counter(s32 clock_mode)
 	if (clock_mode)
 		return __VDSO_USE_SYSCALL;
 
+#ifdef CONFIG_ARM64_ERRATUM_858921_VDSO
+	{
+		u64 old, new;
+
+		/*
+		 * Cortex-A73 erratum 858921: a read while the counter crosses
+		 * a 32-bit boundary can be wrong. Read twice and take the
+		 * first value when bit 32 differs, as the kernel's
+		 * arm64_858921_read_cntvct_el0() does. Correct on the cores
+		 * without the erratum too, wherever the two reads execute.
+		 */
+		isb();
+		asm volatile("mrs %0, cntvct_el0" : "=r" (old) :: "memory");
+		asm volatile("mrs %0, cntvct_el0" : "=r" (new) :: "memory");
+		isb();
+
+		return (((old ^ new) >> 32) & 1) ? old : new;
+	}
+#endif
+
 	/*
 	 * This isb() is required to prevent that the counter value
 	 * is speculated.

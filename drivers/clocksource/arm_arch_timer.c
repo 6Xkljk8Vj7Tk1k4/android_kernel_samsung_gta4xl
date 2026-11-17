@@ -322,6 +322,22 @@ static u64 notrace arm64_858921_read_cntvct_el0(void)
 }
 #endif
 
+/*
+ * True for a workaround that the vDSO applies as well (two reads of the
+ * counter for 858921, see asm/vdso/gettimeofday.h). User space then keeps the
+ * vDSO fast path and its direct access to the counter; without this every
+ * clock_gettime() on such a CPU is a trip into the kernel. A program that
+ * reads CNTVCT_EL0 on its own, not through the vDSO, sees the erratum.
+ */
+static bool arch_timer_wa_in_vdso(const struct arch_timer_erratum_workaround *wa)
+{
+#if defined(CONFIG_ARM64_ERRATUM_858921) && defined(CONFIG_ARM64_ERRATUM_858921_VDSO)
+	return wa->read_cntvct_el0 == arm64_858921_read_cntvct_el0;
+#else
+	return false;
+#endif
+}
+
 #ifdef CONFIG_SUN50I_ERRATUM_UNKNOWN1
 /*
  * The low bits of the counter registers are indeterminate while bit 10 or
@@ -552,7 +568,7 @@ void arch_timer_enable_workaround(const struct arch_timer_erratum_workaround *wa
 	 * late in the game (with a per-CPU erratum, for example), so
 	 * change both the default value and the vdso itself.
 	 */
-	if (wa->read_cntvct_el0) {
+	if (wa->read_cntvct_el0 && !arch_timer_wa_in_vdso(wa)) {
 		clocksource_counter.archdata.vdso_direct = false;
 		vdso_default = false;
 	}
@@ -624,7 +640,7 @@ static bool arch_timer_this_cpu_has_cntvct_wa(void)
 	const struct arch_timer_erratum_workaround *wa;
 
 	wa = __this_cpu_read(timer_unstable_counter_workaround);
-	return wa && wa->read_cntvct_el0;
+	return wa && wa->read_cntvct_el0 && !arch_timer_wa_in_vdso(wa);
 }
 #else
 #define arch_timer_check_ool_workaround(t,a)		do { } while(0)

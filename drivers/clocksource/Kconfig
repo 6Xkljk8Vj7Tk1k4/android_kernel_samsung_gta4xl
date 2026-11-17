@@ -367,6 +367,22 @@ config ARM64_ERRATUM_858921
 	  The workaround will be dynamically enabled when an affected
 	  core is detected.
 
+
+config ARM64_ERRATUM_858921_VDSO
+	bool "Cortex-A73: 858921: apply the workaround in the vDSO"
+	depends on ARM64_ERRATUM_858921 && GENERIC_GETTIMEOFDAY
+	help
+	  The workaround for erratum 858921 reads the counter twice. The kernel
+	  alone can only do that for itself: user space loses the vDSO fast
+	  path and its access to the counter is trapped, which turns every
+	  clock_gettime() into a trip into the kernel.
+
+	  With this option the vDSO reads the counter twice as well and user
+	  space keeps direct access. Programs that read CNTVCT_EL0 themselves
+	  instead of calling the C library are then exposed to the erratum
+	  (one wrong value in a window of a few cycles every 2^32 ticks).
+
+	  If unsure, say N.
 config SUN50I_ERRATUM_UNKNOWN1
 	bool "Workaround for Allwinner A64 erratum UNKNOWN1"
 	default y
