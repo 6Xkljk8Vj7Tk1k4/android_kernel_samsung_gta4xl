@@ -90,11 +90,14 @@
 /* max length to print of cmdline/proctitle value during audit */
 #define MAX_PROCTITLE_AUDIT_LEN 128
 
-// [ SEC_SELINUX_PORTING_COMMON
-// Enable AUDIT_PROCTITLE, AUDIT_PATH
-/* number of audit rules */
-int audit_n_rules = 1;
-// ] SEC_SELINUX_PORTING_COMMON
+/*
+ * Number of audit rules. The vendor tree started this at 1 ("Enable
+ * AUDIT_PROCTITLE, AUDIT_PATH"): no context was ever a dummy, and every
+ * syscall of every task collected names and paths in case a denial followed.
+ * Zero, as upstream and as the 4.14 kernel of this board: a denial still
+ * comes with its SYSCALL record, without the PATH and PROCTITLE ones.
+ */
+int audit_n_rules;
 
 /* determines whether we collect data for signals sent */
 int audit_signals;
@@ -946,6 +949,19 @@ int audit_alloc(struct task_struct *tsk)
 
 	if (likely(!audit_ever_enabled))
 		return 0; /* Return if not auditing. */
+
+	/*
+	 * With no syscall or task rule loaded a context has nothing to filter:
+	 * all it would add are the SYSCALL and PROCTITLE records next to other
+	 * messages (an AVC denial is logged either way), at the price of the
+	 * syscall slow path for every call the task ever makes. Rules loaded
+	 * later apply to the tasks forked after that.
+	 */
+	if (IS_ENABLED(CONFIG_AUDITSYSCALL_CONTEXT_NEEDS_RULES) && !audit_n_rules &&
+	    list_empty(&audit_filter_list[AUDIT_FILTER_TASK])) {
+		clear_tsk_thread_flag(tsk, TIF_SYSCALL_AUDIT);
+		return 0;
+	}
 
 	state = audit_filter_task(tsk, &key);
 	if (state == AUDIT_DISABLED) {

@@ -401,6 +401,22 @@ config AUDITSYSCALL
 	def_bool y
 	depends on AUDIT && HAVE_ARCH_AUDITSYSCALL
 
+
+config AUDITSYSCALL_CONTEXT_NEEDS_RULES
+	bool "No syscall audit context for tasks while no audit rule is loaded"
+	depends on AUDITSYSCALL
+	help
+	  Once auditing has been enabled every new task gets an audit context
+	  and with it the slow syscall entry and exit path, whether or not any
+	  rule could ever match. Android enables auditing (logd reads the
+	  SELinux denials from it) and never loads a rule.
+
+	  With this option a task forked while no syscall or task rule is
+	  loaded gets no context. Denials are still logged; the SYSCALL and
+	  PROCTITLE records that used to accompany them are not. Rules loaded
+	  later do not reach tasks that were forked before.
+
+	  If unsure, say N.
 config AUDIT_WATCH
 	def_bool y
 	depends on AUDITSYSCALL
