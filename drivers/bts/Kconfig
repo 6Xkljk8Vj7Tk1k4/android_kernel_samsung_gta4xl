@@ -27,4 +27,12 @@ config EXYNOS3830_BTS
         help
           Enable BTS (Bus traffic shaper) support for exynos3830
 
+config EXYNOS9610_BTS
+	bool "Bus traffic shaper support for exynos9610 (driver of the 4.14 tree)"
+	default y
+	depends on SOC_EXYNOS9610
+	help
+	  Enable BTS (Bus traffic shaper) support for exynos9610: sets the
+	  bus QoS and requests DVFS levels for display, camera, codec and GPU.
+
 endif

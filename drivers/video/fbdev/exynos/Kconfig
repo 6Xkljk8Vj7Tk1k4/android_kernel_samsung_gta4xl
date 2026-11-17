@@ -5,3 +5,8 @@ source "drivers/video/fbdev/exynos/panel/Kconfig"
 
 endif # SOC_EXYNOS9630 || SOC_EXYNOS9830 || SOC_EXYNOS3830
 
+if SOC_EXYNOS9610
+
+source "drivers/video/fbdev/exynos/dpu20/Kconfig"
+
+endif # SOC_EXYNOS9610

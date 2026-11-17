@@ -1,4 +1,11 @@
 /*
+ * The Exynos 9610 uses the BTS driver of its 4.14 kernel (drivers/bts/bts-exynos9610.c), whose
+ * interface differs from this tree's: dpu20, devfreq and the Mali glue call the 4.14 one.
+ */
+#ifdef CONFIG_EXYNOS9610_BTS
+#include <soc/samsung/bts-exynos9610.h>
+#else
+/*
  * Copyright (c) 2018 Samsung Electronics Co., Ltd.
  *		http://www.samsung.com
  *
@@ -54,3 +61,4 @@ int bts_change_drex_config(int on);
 #define exynos_bts_scitoken_setting(a) do {} while (0)
 
 #endif /* __EXYNOS_BTS_H_ */
+#endif /* CONFIG_EXYNOS9610_BTS */

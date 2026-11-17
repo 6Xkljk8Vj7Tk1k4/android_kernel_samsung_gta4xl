@@ -205,7 +205,9 @@ void g2d_update_performance(struct g2d_device *g2d_dev)
 		 qos.devfreq,
 		 exynos_devfreq_get_domain_freq(g2d_dev->dvfs_int));
 
-#if defined(CONFIG_EXYNOS_BTS)
+#if defined(CONFIG_EXYNOS9610_BTS)
+	bts_id = BTS_BW_G2D;	/* the 9610 BTS driver has fixed bandwidth clients */
+#elif defined(CONFIG_EXYNOS_BTS)
 	bts_id = bts_get_bwindex("g2d");
 #else
 	bts_id = -1;
