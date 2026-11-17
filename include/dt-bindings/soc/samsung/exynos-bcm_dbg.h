@@ -14,6 +14,7 @@
 /* BCM Pre-defined event type */
 #define NO_PRE_DEFINE_EVT		0
 #define LATENCY_FMT_EVT			1
+#define PEAK_LATENCY_FMT_EVT		1	/* name used by exynos9610.dts */
 #define MO_FMT_EVT			2
 #define BURST_LENGTH_FMT_EVT		3
 #define REQ_BLOCK_FMT_EVT		4
