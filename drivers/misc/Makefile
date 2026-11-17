@@ -65,3 +65,9 @@ obj-y				+= samsung/
 # TEEGRIS kernel driver
 ccflags-$(CONFIG_TZDEV) += -I$(srctree)/drivers/misc/tzdev/include
 obj-$(CONFIG_TZDEV)		+= tzdev/
+ifndef CONFIG_EXYNOS_MODEM_IF
+obj-$(CONFIG_MCU_IPC)		+= mcu_ipc/
+obj-$(CONFIG_SHM_IPC)		+= mcu_ipc/
+obj-$(CONFIG_SEC_SIPC_MODEM_IF)	+= modem_v1/
+obj-$(CONFIG_GNSS_SHMEM_IF)	+= gnss_if/
+endif

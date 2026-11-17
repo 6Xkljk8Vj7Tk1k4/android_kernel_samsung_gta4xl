@@ -18,17 +18,14 @@
 enum modem_event {
 	MODEM_EVENT_RESET	= 1,
 	MODEM_EVENT_EXIT,
+	MODEM_EVENT_BOOTING	= 3,
 	MODEM_EVENT_ONLINE	= 4,
 	MODEM_EVENT_WATCHDOG	= 9,
 };
 
 #if IS_ENABLED(CONFIG_SHM_IPC)
 extern int register_modem_event_notifier(struct notifier_block *nb);
-#ifdef CONFIG_EXYNOS_MODEM_IF
-extern void modem_notify_event(enum modem_event evt, void *mc);
-#else
 extern void modem_notify_event(enum modem_event evt);
-#endif
 #else
 static inline int register_modem_event_notifier(struct notifier_block *nb)
 {

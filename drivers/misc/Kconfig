@@ -550,4 +550,13 @@ source "drivers/misc/ocxl/Kconfig"
 source "drivers/misc/cardreader/Kconfig"
 source "drivers/misc/samsung/Kconfig"
 source "drivers/misc/tzdev/Kconfig"
+# AP-CP mailbox, shared memory, modem (SS310AP) and GNSS interfaces of the 4.14 kernel: the
+# RIL, cbd and gpsd blobs of the Exynos 9610 talk to these.
+# The Exynos 850 modem interface (drivers/soc/samsung/cpif) brings its own.
+if SOC_EXYNOS9610 && !EXYNOS_MODEM_IF
+source "drivers/misc/mcu_ipc/Kconfig"
+source "drivers/misc/modem_v1/Kconfig"
+source "drivers/misc/gnss_if/Kconfig"
+endif
+
 endmenu
