@@ -14,7 +14,7 @@
 #ifndef __TZDEV_TEEC_TYPES_H__
 #define __TZDEV_TEEC_TYPES_H__
 
-#include <linux/wait.h>
+#include <linux/completion.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/types.h>
@@ -39,16 +39,14 @@ struct tzdev_teec_session {
 	TEEC_Context *context;
 	struct tzdev_teec_tmpref tmpref[MAX_PARAM_COUNT];
 	struct mutex mutex;
-	wait_queue_head_t wq;
-	unsigned int cancel;
+	struct completion cancel;
 	struct sock_desc *socket;
 	unsigned int serial;
 };
 
 struct tzdev_teec_shared_memory {
 	TEEC_Context *context;
-	wait_queue_head_t wq;
-	unsigned int released;
+	struct completion released;
 	struct page **pages;
 	unsigned int num_pages;
 	unsigned int offset;

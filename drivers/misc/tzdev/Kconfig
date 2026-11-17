@@ -21,6 +21,32 @@ config TZDEV_USE_ARM_CALLING_CONVENTION
 	  EL3 code comply to this convention compared to old architectures
 	  when Secure kernel contains non-compatible commands handler.
 
+config TZDEV_CMA
+	bool "Allocate TrustZone environment CMA region"
+	depends on (CMA || DMA_CMA) && !ARCH_MSM
+	default n
+	help
+	  Use CMA region to allocate TrustZone environment memory.
+
+config TZDEV_MEMRESSZ
+	hex "TrustZone environment memory reservation size"
+	depends on TZDEV_CMA
+	default 0x01000000
+	help
+	  Provide reservation of memory for usage in secure world - allocation size.
+
+config TZDEV_MEMRESSZPROT
+	hex "TrustZone environment memory reservation size - protected"
+	depends on TZDEV_CMA
+	help
+	  Provide reservation of memory for usage in secure world - bootloader-protected size.
+
+config TZDEV_MEMRESADDR
+	hex "TrustZone environment memory reservation address"
+	depends on TZDEV_CMA
+	help
+	  Provide reservation of memory for usage in secure world - allocation address.
+
 config TZDEV_IWI_EVENT
 	int "IWI_EVENT interrupt number"
 	default 280 if ARCH_MSM
@@ -42,6 +68,12 @@ config TZDEV_SWD_PANIC_IS_CRITICAL
 	default n
 	help
 	  Enable support of NWd panic generation in tzdev when secure world panics.
+
+config TZDEV_NWD_PANIC_ON_CLOSE
+	bool "Panic NWd if tzdev is closed"
+	default n
+	help
+	  Panic system on crash/close of NWd components.
 
 config TZLOG
 	bool "TZDEV LOGGER support"
@@ -79,7 +111,7 @@ config TZDEV_SK_MULTICORE
 
 config ION_FD2PHYS
 	tristate "ION FD to physical address converter"
-	depends on ION && (ARCH_EXYNOS || ARCH_MSM || ARCH_WHALE || ARCH_MT6755 || ARCH_MT6735 || ARCH_RANCHU || MACH_MT6757 || MACH_MT6853)
+	depends on ION && (ARCH_EXYNOS || ARCH_MSM || ARCH_WHALE || ARCH_MT6755 || ARCH_MT6735 || ARCH_RANCHU || MACH_MT6757)
 	default y
 	help
 	  Provide a method for userspace to get physical address from ION buffer
@@ -147,15 +179,9 @@ config TZDEV_DEBUG
 
 config TZ_NWFS
 	bool "Normal world file system interface driver"
-	default y
-	help
-	  Normal world file system interface driver.
-
-config TZ_SCMA
-	bool "Secure contiguous memory allocator"
 	default n
 	help
-	  Allow to allocate contiguous memory for Secure OS purposes.
+	  Normal world file system interface driver.
 
 config TZDEV_DEPLOY_TZAR
 	bool "tzdev deploy startup.tzar"
@@ -183,6 +209,14 @@ choice
 endchoice
 
 if TZDEV_DEBUG
+
+config TZ_TELEMETRY
+	bool "Telemetry module"
+	select TZ_TRANSPORT
+	default n
+	help
+	  Enable Telemetry module. It is used for collecting runtime information
+	  about Secure OS state.
 
 config TZPROFILER
 	bool "TZDEV PROFILING support"
@@ -220,13 +254,6 @@ config TZ_PANIC_DUMP
 	  receive SWd memory contents when secure kernel panic
 	  occurs (if proper option is set in secure kernel config) and
 	  provides interface for userspace to access said memory contents.
-
-config TZ_PMF
-	bool "Performance Measurement Framework enables"
-	depends on TZDEV
-	default n
-	help
-	  Enable Performance Measurement Framework in the tzdev.
 
 endif #TZDEV_DEBUG
 

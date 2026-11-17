@@ -17,7 +17,7 @@
 #include <linux/types.h>
 
 #include "iw_messages.h"
-#include "core/iwsock.h"
+#include "tz_iwsock.h"
 
 #define PARAM_TYPE_GET(types, nr)	(((types) >> ((nr) * 4)) & 0xF)
 #define PARAM_TYPE_SET(types, nr)	(((types) & 0xF) << ((nr) * 4))

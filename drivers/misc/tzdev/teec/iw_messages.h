@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2012-2019, Samsung Electronics Co., Ltd.
+/*
+ * Copyright (C) 2012-2017, Samsung Electronics Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -15,7 +15,7 @@
 #define __IW_MESSAGES_H__
 
 #ifndef __USED_BY_TZSL__
-#include "core/cred.h"
+#include "tz_cred.h"
 #else
 #include <stdint.h>
 #include <uuid/uuid.h>
@@ -28,16 +28,14 @@
 
 #define TEE_MAX_CONTEXT_NAME_LEN	64
 
-#define MAX_TA_NAME_LEN 		256
-
 /* This macro should be used for any inter-world structures, to avoid possible
  * problems with structure padding */
 #define IW_STRUCTURE			__attribute__((packed))
 
 #define IWD_TIMEOUT_INFINITY		((uint64_t)(-1))
 
-#define USERBOOT_SOCK			"/service/userboot"
-#define ROOT_TASK_SOCK			"/service/root_task"
+#define ROOT_TASK_SOCK          "socket://root_task_iwd_sock"
+#define STARTUP_LOADER_SOCK     "socket://startup_loader"
 
 #ifndef __USED_BY_TZSL__
 typedef struct tz_uuid tz_uuid_t;
@@ -97,14 +95,6 @@ enum iw_cmd_type {
     CMD_REPLY_TUI_START = 25,
     CMD_REPLY_TUI_GET_RESOLUTION = 26,
     CMD_REPLY_TUI_STOP = 27,
-
-    CMD_INIT_PMF = 28,
-    CMD_REPLY_INIT_PMF = 29,
-    CMD_FINI_PMF = 30,
-    CMD_REPLY_FINI_PMF = 31,
-
-    CMD_CAN_CLOSE = 32,
-    CMD_REPLY_CAN_CLOSE = 33,
 
     CMD_MAX
 };
@@ -204,11 +194,6 @@ struct cmd_cancellation {
     uint32_t op_serial;
 } IW_STRUCTURE;
 
-struct cmd_cancellation_root {
-    struct cmd_request base;
-    uint32_t reason;
-} IW_STRUCTURE;
-
 /* Use struct cmd_reply for reply message */
 struct cmd_set_cluster {
     struct cmd_request base;
@@ -227,77 +212,6 @@ struct cmd_reply_open_tzdaemon_connection {
     struct cmd_reply base;
 } IW_STRUCTURE;
 
-struct cmd_ta_image {
-    struct cmd_request base;
-    char name[MAX_TA_NAME_LEN];
-    char new_name[MAX_TA_NAME_LEN];
-    tz_uuid_t uuid;
-} IW_STRUCTURE;
-
-struct cmd_reply_ta_image {
-    struct cmd_reply base;
-    uint32_t version;
-    struct shared_buffer_description buf_desc;
-} IW_STRUCTURE;
-
-struct cmd_shutdown_ta {
-    struct cmd_request base;
-    tz_uuid_t uuid;
-    uint32_t error_code;
-} IW_STRUCTURE;
-
-struct cmd_reply_shutdown_ta {
-    struct cmd_reply base;
-    uint32_t ta_in_progress;
-} IW_STRUCTURE;
-
-//TODO: remove this code when TEEGRIS-1646 get closed
-struct cmd_unlock_tmf_ta {
-    struct cmd_request base;
-} IW_STRUCTURE;
-
-struct cmd_reply_unlock_tmf_ta {
-    struct cmd_reply base;
-} IW_STRUCTURE;
-//end TODO
-
-struct cmd_sync_tee_state {
-    struct cmd_request base;
-} IW_STRUCTURE;
-
-struct cmd_reply_sync_tee_state {
-    struct cmd_reply base;
-} IW_STRUCTURE;
-
-struct cmd_request_tmf_parent_sd_uuid {
-    struct cmd_request base;
-    tz_uuid_t uuid; /* Currently, structs TEEC_UUID and uuid_t and tz_uuid_t are equal
-                     * and already packed */
-} IW_STRUCTURE;
-
-struct cmd_reply_tmf_parent_sd_uuid {
-    struct cmd_reply base;
-    tz_uuid_t parent_uuid;
-    uint32_t error_code;
-} IW_STRUCTURE;
-
-struct cmd_init_pmf {
-    struct cmd_request base;
-    int32_t pmf_shmem_id;
-} IW_STRUCTURE;
-
-struct cmd_reply_init_pmf {
-    struct cmd_reply base;
-} IW_STRUCTURE;
-
-struct cmd_can_close {
-    struct cmd_request base;
-    uint32_t sockets_recieved_cnt;
-} IW_STRUCTURE;
-
-struct cmd_reply_can_close {
-    struct cmd_reply base;
-    uint8_t can_close;
-} IW_STRUCTURE;
+#define MAX_TA_NAME_LEN 256
 
 #endif /* __IW_MESSAGES_H__ */
