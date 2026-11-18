@@ -58,6 +58,10 @@
 static struct work_struct	wlbtd_work;
 #else
 #define MEMDUMP_FILE_FOR_RECOVERY 2
+#ifdef CONFIG_SCSC_PRINTK
+static void mx_logger_dump_work_func(struct work_struct *work);
+static DECLARE_WORK(mx_logger_dump_work, mx_logger_dump_work_func);
+#endif
 #endif
 
 #include "scsc_lerna.h"
@@ -2922,6 +2926,8 @@ void mxman_deinit(struct mxman *mxman)
 	syserr_recovery_wq_deinit(mxman);
 #ifdef CONFIG_SCSC_WLBTD
 	wlbtd_wq_deinit(mxman);
+#elif defined(CONFIG_SCSC_PRINTK)
+	cancel_work_sync(&mx_logger_dump_work);
 #endif
 #ifdef CONFIG_ANDROID
 	wake_lock_destroy(&mxman->failure_recovery_wake_lock);
@@ -3206,39 +3212,52 @@ static int __stat(const char *file)
 
 	return r;
 }
+
+/*
+ * The lookup of the script reads from the vendor partition unless it is cached, and
+ * mx140_log_dump() is called with driver locks held (the WLAN disconnect handlers hold the
+ * interface's vif_mutex) at times when storage is suspended: a disconnect that wakes the
+ * system is handled before the storage device is resumed, and the resume of the WLAN
+ * service, which comes first, needs the same mutex. So this runs from a freezable
+ * workqueue: not before tasks are thawed, and without the caller's locks.
+ */
+static void mx_logger_dump_work_func(struct work_struct *work)
+{
+	char mxlbin[128];
+	int r;
+
+	r = mx140_exe_path(NULL, mxlbin, sizeof(mxlbin), "mx_logger_dump.sh");
+	if (r) {
+		SCSC_TAG_ERR(MXMAN, "mx_logger_dump.sh path error\n");
+		return;
+	}
+	/*
+	 * Test presence of script before invoking, to suppress
+	 * unnecessary error message if not installed.
+	 */
+	r = __stat(mxlbin);
+	if (r) {
+		SCSC_TAG_DEBUG(MXMAN, "%s not installed\n", mxlbin);
+		return;
+	}
+	SCSC_TAG_INFO(MXMAN, "Invoking mx_logger_dump.sh UHM\n");
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
+	r = _mx_exec(mxlbin, UMH_WAIT_EXEC);
+	if (r)
+		SCSC_TAG_ERR(MXMAN, "mx_logger_dump.sh err:%d\n", r);
+#endif
+}
 #endif
 
 int mx140_log_dump(void)
 {
 #ifdef CONFIG_SCSC_PRINTK
-	int r;
 # ifdef CONFIG_SCSC_WLBTD
-	r = schedule_work(&wlbtd_work);
+	return schedule_work(&wlbtd_work);
 # else
-	char mxlbin[128];
-
-	r = mx140_exe_path(NULL, mxlbin, sizeof(mxlbin), "mx_logger_dump.sh");
-	if (r) {
-		SCSC_TAG_ERR(MXMAN, "mx_logger_dump.sh path error\n");
-	} else {
-		/*
-		 * Test presence of script before invoking, to suppress
-		 * unnecessary error message if not installed.
-		 */
-		r = __stat(mxlbin);
-		if (r) {
-			SCSC_TAG_DEBUG(MXMAN, "%s not installed\n", mxlbin);
-			return r;
-		}
-		SCSC_TAG_INFO(MXMAN, "Invoking mx_logger_dump.sh UHM\n");
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
-		r = _mx_exec(mxlbin, UMH_WAIT_EXEC);
-		if (r)
-			SCSC_TAG_ERR(MXMAN, "mx_logger_dump.sh err:%d\n", r);
-#endif
-	}
+	queue_work(system_freezable_wq, &mx_logger_dump_work);
+	return 0;
 # endif /* CONFIG_SCSC_WLBTD */
-	return r;
 #else
 	return 0;
 #endif
