@@ -786,7 +786,8 @@ static int fimc_is_ischain_loadcalb_eeprom(struct fimc_is_core *core,
 	} else {
 		if (crc32_check_list[position][CRC32_CHECK_HEADER] == true) {
 			err("Camera[%d]: CRC32 error. But header section is no problem.\n", position);
-			memset((void *)(cal_ptr + 0x1000), 0xFF, cal_size - 0x1000);
+			if (cal_size > 0x1000)
+				memset((void *)(cal_ptr + 0x1000), 0xFF, cal_size - 0x1000);
 		} else {
 			err("Camera[%d] : CRC32 error for all section.\n", position);
 			memset((void *)(cal_ptr), 0xFF, cal_size);
