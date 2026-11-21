@@ -470,7 +470,7 @@ static ssize_t chub_log_flush_save(struct device *dev,
 		auto_log_flush_ms = event * 1000;
 #endif
 		if (auto_log_flush_ms)
-			dev_dbg(dev, "%s is flushed every %d ms.\n", auto_log_flush_ms);
+			dev_dbg(dev, "%s is flushed every %d ms.\n", __func__, auto_log_flush_ms);
 		return count;
 	} else {
 		return 0;

@@ -304,7 +304,7 @@ static bool contexthub_lowlevel_alive(struct contexthub_ipc_info *ipc)
 /* handle errors of chub driver and fw  */
 static void handle_debug_work(struct contexthub_ipc_info *ipc, enum chub_err_type err)
 {
-	int need_reset;
+	int need_reset = 0;
 	int alive = contexthub_lowlevel_alive(ipc);
 
 	dev_info(ipc->dev, "%s: err:%d, alive:%d, status:%d, in-reset:%d\n",
@@ -370,7 +370,7 @@ static void contexthub_handle_debug(struct contexthub_ipc_info *ipc,
 		else if ((fw_evt == IPC_DEBUG_CHUB_ASSERT) || (fw_evt == IPC_DEBUG_CHUB_ERROR))
 			err = CHUB_ERR_FW_ERROR;
 		else
-			dev_warn(ipc->dev, "%s: unsupported fw_evt: %d\n", fw_evt);
+			dev_warn(ipc->dev, "%s: unsupported fw_evt: %d\n", __func__, fw_evt);
 
 		ipc_write_debug_event(AP, 0);
 		contexthub_put_token(ipc);
@@ -1279,7 +1279,6 @@ static __init int contexthub_ipc_hw_init(struct platform_device *pdev,
 					 struct contexthub_ipc_info *chub)
 {
 	int ret;
-	int irq;
 	struct resource *res;
 	const char *os;
 	const char *resetmode;
@@ -1315,8 +1314,8 @@ static __init int contexthub_ipc_hw_init(struct platform_device *pdev,
 
 	/* get mailbox interrupt */
 	chub->irq_mailbox = irq_of_parse_and_map(node, 0);
-	if (chub->irq_mailbox < 0) {
-		dev_err(dev, "failed to get irq:%d\n", irq);
+	if (chub->irq_mailbox <= 0) {
+		dev_err(dev, "failed to get irq:%d\n", chub->irq_mailbox);
 		return -EINVAL;
 	}
 
@@ -1350,7 +1349,7 @@ static __init int contexthub_ipc_hw_init(struct platform_device *pdev,
 		}
 		chub->irq_wdt_disabled = 0;
 	} else {
-		dev_info(dev, "don't use wdt irq:%d\n", irq);
+		dev_info(dev, "don't use wdt irq:%d\n", chub->irq_wdt);
 	}
 #endif
 
