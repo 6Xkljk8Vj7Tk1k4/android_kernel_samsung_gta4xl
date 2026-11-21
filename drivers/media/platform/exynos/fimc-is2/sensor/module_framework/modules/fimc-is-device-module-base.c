@@ -701,17 +701,17 @@ int sensor_module_s_ctrl(struct v4l2_subdev *subdev, struct v4l2_control *ctrl)
 		break;
 	case V4L2_CID_SENSOR_SET_GAIN:
 	case V4L2_CID_SENSOR_SET_ANALOG_GAIN:
-	if (sensor_peri->cis.cis_data->analog_gain[1] != ctrl->value) {
-		/* long_analog_gain and short_analog_gain is same value */
-		ae_val.val = ae_val.short_val = ctrl->value;
-		ret = fimc_is_sensor_peri_s_analog_gain(device, ae_val);
-		if (ret < 0) {
-			err("failed to set analog gain : %d\n - %d",
-					ctrl->value, ret);
-			goto p_err;
+		if (sensor_peri->cis.cis_data->analog_gain[1] != ctrl->value) {
+			/* long_analog_gain and short_analog_gain is same value */
+			ae_val.val = ae_val.short_val = ctrl->value;
+			ret = fimc_is_sensor_peri_s_analog_gain(device, ae_val);
+			if (ret < 0) {
+				err("failed to set analog gain : %d\n - %d",
+						ctrl->value, ret);
+				goto p_err;
+			}
 		}
 		break;
-	}
 	case V4L2_CID_SENSOR_SET_DIGITAL_GAIN:
 		/* long_digital_gain and short_digital_gain is same value */
 		ae_val.val = ae_val.short_val = ctrl->value;
