@@ -4497,6 +4497,7 @@ void slsi_set_packet_filters(struct slsi_dev *sdev, struct net_device *dev)
 		return;
 
 	if (WARN_ON(!peer) || WARN_ON(!peer->assoc_resp_ie))
+		return;
 
 #if !(IS_ENABLED(CONFIG_IPV6))
 	/*Opt out all IPv6 packets in active and suspended mode (ipv6 filtering)*/
