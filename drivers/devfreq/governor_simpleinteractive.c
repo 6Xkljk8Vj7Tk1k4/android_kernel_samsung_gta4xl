@@ -414,11 +414,8 @@ static int devfreq_simple_interactive_register_notifier(struct devfreq *df)
 	return 0;
 
 err2:
-	kfree((void *)&data->nb_max.nb);
-
 err1:
-	kfree((void *)&data->nb.nb);
-
+	/* nb and nb_max are embedded in the devfreq data: nothing to free */
 	return ret;
 }
 
