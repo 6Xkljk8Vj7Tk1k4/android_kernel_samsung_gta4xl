@@ -576,7 +576,7 @@ static int sec_bat_check_mix_temp(struct sec_battery_info *battery, int input_cu
 
 #if defined(CONFIG_WIRELESS_TX_MODE)
 			if (battery->wc_tx_enable) {
-				pr_info("@Tx_Mode enter mix_temp_limit, TX mode should turn off \n", __func__);
+				pr_info("%s @Tx_Mode enter mix_temp_limit, TX mode should turn off\n", __func__);
 				sec_bat_set_tx_event(battery, BATT_TX_EVENT_WIRELESS_TX_HIGH_TEMP, BATT_TX_EVENT_WIRELESS_TX_HIGH_TEMP);
 				battery->tx_retry_case |= SEC_BAT_TX_RETRY_MIX_TEMP;
 				sec_wireless_set_tx_enable(battery, false);
@@ -585,7 +585,7 @@ static int sec_bat_check_mix_temp(struct sec_battery_info *battery, int input_cu
 		} else if (battery->mix_limit) {
 			battery->mix_limit = false;
 			if (battery->tx_retry_case & SEC_BAT_TX_RETRY_MIX_TEMP) {
-				pr_info("@Tx_Mode recovery mix_temp_limit, TX mode should be retried \n", __func__);
+				pr_info("%s @Tx_Mode recovery mix_temp_limit, TX mode should be retried\n", __func__);
 				if ((battery->tx_retry_case & ~SEC_BAT_TX_RETRY_MIX_TEMP) == 0)
 					sec_bat_set_tx_event(battery, BATT_TX_EVENT_WIRELESS_TX_RETRY, BATT_TX_EVENT_WIRELESS_TX_RETRY);
 				battery->tx_retry_case &= ~SEC_BAT_TX_RETRY_MIX_TEMP;
@@ -3347,10 +3347,12 @@ void sec_bat_get_battery_info(struct sec_battery_info *battery) {
 			POWER_SUPPLY_PROP_ENERGY_NOW, value);
 	}
 
-	value.intval = (battery->status == POWER_SUPPLY_STATUS_FULL) ?
-		100 : battery->capacity;
-	psy_do_property(battery->pdata->wireless_charger_name, set,
-		POWER_SUPPLY_PROP_CAPACITY, value);
+	if (battery->pdata->wireless_charger_name) {
+		value.intval = (battery->status == POWER_SUPPLY_STATUS_FULL) ?
+			100 : battery->capacity;
+		psy_do_property(battery->pdata->wireless_charger_name, set,
+			POWER_SUPPLY_PROP_CAPACITY, value);
+	}
 
 	sec_bat_get_temperature_info(battery);
 
@@ -8353,8 +8355,9 @@ static int sec_battery_probe(struct platform_device *pdev)
 	/* notify wireless charger driver when sec_battery probe is done,
 		if wireless charging is possible, POWER_SUPPLY_PROP_ONLINE of wireless property will be called. */
 	value.intval = 0;
-	psy_do_property(battery->pdata->wireless_charger_name, set,
-					POWER_SUPPLY_PROP_CHARGE_TYPE, value);
+	if (battery->pdata->wireless_charger_name)
+		psy_do_property(battery->pdata->wireless_charger_name, set,
+						POWER_SUPPLY_PROP_CHARGE_TYPE, value);
 
 #if defined(CONFIG_STORE_MODE) && !defined(CONFIG_SEC_FACTORY)
 	battery->store_mode = true;
