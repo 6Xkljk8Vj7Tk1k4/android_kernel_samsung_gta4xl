@@ -1116,10 +1116,8 @@ static unsigned int s3c24xx_serial_getclk(struct s3c24xx_uart_port *ourport,
 			unsigned int *clk_num)
 {
 	struct s3c24xx_uart_info *info = ourport->info;
-	struct clk *clk;
 	unsigned long rate;
 	unsigned int cnt, baud, quot, best_quot = 0;
-	char clkname[MAX_CLK_NAME_LENGTH];
 	int calc_deviation, deviation = (1 << 30) - 1;
 	int ret;
 
@@ -1144,8 +1142,8 @@ static unsigned int s3c24xx_serial_getclk(struct s3c24xx_uart_port *ourport,
 
 		if (!rate) {
 			dev_err(ourport->port.dev,
-				"Failed to get clock rate for %s.\n", clkname);
-			clk_put(clk);
+				"Failed to get clock rate for ipclk_uart%d.\n",
+				ourport->port.line);
 			continue;
 		}
 
@@ -1183,8 +1181,6 @@ static unsigned int s3c24xx_serial_getclk(struct s3c24xx_uart_port *ourport,
 			best_quot = quot;
 			*clk_num = cnt;
 			deviation = calc_deviation;
-		} else {
-			clk_put(clk);
 		}
 	}
 
