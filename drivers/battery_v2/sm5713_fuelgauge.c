@@ -949,8 +949,10 @@ int sm5713_fg_calculate_iocv(struct sm5713_fuelgauge_data *fuelgauge, bool is_vs
 
 	/* lb get start */
 	roop_max = (ret & 0x000F);
-	if (roop_max > FG_INIT_B_LEN)
+	if (ret < 0 || roop_max > FG_INIT_B_LEN)
 		roop_max = FG_INIT_B_LEN;
+	else if (roop_max < 3)
+		roop_max = 3;
 
 	roop_start = SM5713_FG_REG_START_LB_V;
 	for (i = roop_start; i < roop_start + roop_max; i++) {
