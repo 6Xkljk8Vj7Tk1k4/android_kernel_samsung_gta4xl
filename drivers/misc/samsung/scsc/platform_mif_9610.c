@@ -387,6 +387,7 @@ static int platform_mif_parse_smapper(struct platform_mif *platform, struct devi
 			"Error mapping smapper register region\n");
 		kfree(platform->smapper);
 		platform->smapper = NULL;
+		platform->smapper_banks = 0;
 		return -ENOENT;
 	}
 
