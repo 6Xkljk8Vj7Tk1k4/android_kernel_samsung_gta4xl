@@ -355,7 +355,7 @@ static ssize_t himax_layout_read(char *buf, size_t len)
 static ssize_t himax_layout_write(char *buf, size_t len)
 {
 	struct himax_ts_data *ts = private_ts;
-	char buf_tmp[5] = {0};
+	char buf_tmp[6] = {0};
 	int i = 0, j = 0, k = 0, ret;
 	unsigned long value;
 	int layout[4] = {0};
@@ -380,6 +380,10 @@ static ssize_t himax_layout_write(char *buf, size_t len)
 
 			if (k < 4) {
 				ret = kstrtoul(buf_tmp, 10, &value);
+				if (ret) {
+					I("%s: invalid value\n", __func__);
+					return -EINVAL;
+				}
 				layout[k++] = value;
 			}
 		}

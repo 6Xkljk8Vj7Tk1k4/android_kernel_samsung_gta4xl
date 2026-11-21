@@ -2809,7 +2809,7 @@ FAIL_END:
 	filp_close(filp, NULL);
 	set_fs(oldfs);
 	himax_int_enable(1);
-	I("%s: DONE %d\n", __func__);
+	I("%s: DONE %d\n", __func__, ret);
 	return ret;
 }
 
@@ -2843,7 +2843,7 @@ static void fw_update(void *dev_data)
 		break;
 	default:
 		ret = -EINVAL;
-		I("%s not support cmd");
+		I("%s not support cmd\n", __func__);
 		break;
 	}
 
