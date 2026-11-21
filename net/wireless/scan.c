@@ -1432,10 +1432,12 @@ cfg80211_inform_single_bss_data(struct wiphy *wiphy,
 		trans_internal = container_of(trans_bss,
 					      struct cfg80211_internal_bss,
 					      pub);
+		spin_lock_bh(&rdev->bss_lock);
 		if (cfg80211_add_nontrans_list(trans_internal, res)) {
 			if (__cfg80211_unlink_bss(rdev, res))
 				rdev->bss_generation++;
 		}
+		spin_unlock_bh(&rdev->bss_lock);
 	}
 	trace_cfg80211_return_bss(&res->pub);
 	/* cfg80211_bss_update gives us a referenced result */
@@ -1462,6 +1464,11 @@ static void cfg80211_parse_mbssid_data(struct wiphy *wiphy,
 	if (!trans_bss)
 		return;
 	if (!cfg80211_find_ie(WLAN_EID_MULTIPLE_BSSID, ie, ielen))
+		return;
+	if (!wiphy->support_mbssid)
+		return;
+	if (wiphy->support_only_he_mbssid &&
+	    !cfg80211_find_ext_ie(WLAN_EID_EXT_HE_CAPABILITY, ie, ielen))
 		return;
 
 	new_ie = kmalloc(IEEE80211_MAX_DATA_LEN, gfp);
@@ -1577,7 +1584,7 @@ cfg80211_update_notlisted_nontrans(struct wiphy *wiphy,
 	size_t new_ie_len;
 	struct cfg80211_bss_ies *new_ies;
 	const struct cfg80211_bss_ies *old;
-	u8 cpy_len;
+	size_t cpy_len;
 
 	ie = mgmt->u.probe_resp.variable;
 
@@ -1587,7 +1594,12 @@ cfg80211_update_notlisted_nontrans(struct wiphy *wiphy,
 		return;
 	new_ie_len -= trans_ssid[1];
 	mbssid = cfg80211_find_ie(WLAN_EID_MULTIPLE_BSSID, ie, ielen);
-	if (!mbssid)
+	/*
+	 * It's not valid to have the MBSSID element before SSID
+	 * ignore if that happens - the code below assumes it is
+	 * after (while copying things inbetween).
+	 */
+	if (!mbssid || mbssid < trans_ssid)
 		return;
 	new_ie_len -= mbssid[1];
 	rcu_read_lock();
@@ -1644,6 +1656,8 @@ cfg80211_update_notlisted_nontrans(struct wiphy *wiphy,
 		if (old)
 			kfree_rcu((struct cfg80211_bss_ies *)old, rcu_head);
 	}
+
+	kfree(new_ie);
 }
 #else
 /* Returned bss is reference counted and must be cleaned up appropriately. */
@@ -1858,7 +1872,11 @@ cfg80211_inform_bss_frame_data(struct wiphy *wiphy,
 
 	res = cfg80211_inform_single_bss_frame_data(wiphy, data, mgmt,
 						    len, NULL, gfp);
-	if (!res || !cfg80211_find_ie(WLAN_EID_MULTIPLE_BSSID, ie, ielen))
+	if (!res || !wiphy->support_mbssid ||
+	    !cfg80211_find_ie(WLAN_EID_MULTIPLE_BSSID, ie, ielen))
+		return res;
+	if (wiphy->support_only_he_mbssid &&
+	    !cfg80211_find_ext_ie(WLAN_EID_EXT_HE_CAPABILITY, ie, ielen))
 		return res;
 
 	/* process each non-transmitting bss */
@@ -1867,7 +1885,6 @@ cfg80211_inform_bss_frame_data(struct wiphy *wiphy,
 	/* check if the res has other nontransmitting bss which is not
 	 * in MBSSID IE
 	 */
-	ies1 = rcu_access_pointer(res->ies);
 	trans_bss = container_of(res, struct cfg80211_internal_bss, pub);
 	if (!trans_bss)
 		return res;
@@ -1876,13 +1893,17 @@ cfg80211_inform_bss_frame_data(struct wiphy *wiphy,
 	 * earlier than the timestamp of the transmitting BSS then
 	 * update it
 	 */
+	spin_lock_bh(&wiphy_to_rdev(wiphy)->bss_lock);
+	ies1 = rcu_access_pointer(res->ies);
 	list_for_each_entry(tmp_bss, &trans_bss->nontrans_list,
 			    nontrans_list) {
 		ies2 = rcu_access_pointer(tmp_bss->pub.ies);
 		if (ies2->tsf < ies1->tsf)
 			cfg80211_update_notlisted_nontrans(wiphy, tmp_bss,
-							   mgmt, len, gfp);
+							   mgmt, len,
+							   GFP_ATOMIC);
 	}
+	spin_unlock_bh(&wiphy_to_rdev(wiphy)->bss_lock);
 
 	return res;
 }
