@@ -3432,16 +3432,19 @@ int slsi_retry_connection(struct slsi_dev *sdev, struct net_device *dev)
 		memcpy(probe_req_ies, ndev_vif->probe_req_ies, ndev_vif->probe_req_ie_len);
 	if (slsi_mlme_del_vif(sdev, dev) != 0) {
 		SLSI_NET_ERR(dev, "slsi_mlme_del_vif failed\n");
+		kfree(probe_req_ies);
 		return 0;
 	}
 	if (slsi_mlme_add_vif(sdev, dev, dev->dev_addr, device_address) != 0) {
 		SLSI_NET_ERR(dev, "slsi_mlme_add_vif failed\n");
+		kfree(probe_req_ies);
 		return 0;
 	}
 	if (slsi_mlme_register_action_frame(sdev, dev, ndev_vif->sta.action_frame_bmap,
 					    ndev_vif->sta.action_frame_suspend_bmap) != 0) {
 		SLSI_NET_ERR(dev, "Action frame reg fail bitmap 0x%x 0x%x\n",
 			     ndev_vif->sta.action_frame_bmap, ndev_vif->sta.action_frame_bmap);
+		kfree(probe_req_ies);
 		return 0;
 	}
 
@@ -3452,6 +3455,7 @@ int slsi_retry_connection(struct slsi_dev *sdev, struct net_device *dev)
 		(void)slsi_mlme_add_info_elements(sdev, dev, FAPI_PURPOSE_PROBE_REQUEST, probe_req_ies,
 						  probe_req_ie_len);
 	}
+	kfree(probe_req_ies);
 	r = slsi_set_ext_cap(sdev, dev, ndev_vif->sta.sme.ie, ndev_vif->sta.sme.ie_len, slsi_extended_cap_mask);
 	if (r != 0)
 		SLSI_NET_ERR(dev, "Failed to set extended capability MIB: %d\n", r);
