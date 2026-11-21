@@ -243,7 +243,7 @@ static unsigned int sm5713_get_vbat(struct sm5713_fuelgauge_data *fuelgauge)
 	if ((sm5713_read_word(fuelgauge->i2c, SM5713_FG_REG_AUX_STAT) & 0x0002) ||
 		factory_mode) {
 		if (fuelgauge->isjigmoderealvbat)
-			pr_info("%s : nENQ4 high JIG_ON, BUT need real VBAT \n", __func__, ret);
+			pr_info("%s : nENQ4 high JIG_ON, BUT need real VBAT, vbat register read result 0x%x\n", __func__, ret);
 		else {
 			sm5713_write_word(fuelgauge->i2c, SM5713_FG_REG_BAT_PTT1, 0x0109);
 			ret = sm5713_read_word(fuelgauge->i2c, SM5713_FG_REG_VOLTAGE_VSYS);
@@ -1643,7 +1643,7 @@ static void sm5713_update_all_value(struct sm5713_fuelgauge_data *fuelgauge)
 {
 
 	union power_supply_propval value;
-	int temp;
+	int temp = 0;
 
 	fuelgauge->is_charging = (fuelgauge->info.flag_charge_health |
 		fuelgauge->ta_exist) && (fuelgauge->info.batt_current >= 30);
@@ -1697,14 +1697,18 @@ static void sm5713_update_all_value(struct sm5713_fuelgauge_data *fuelgauge)
 		if (fuelgauge->info.temperature/10 < 18)
 		{
 			temp = sm5713_read_word(fuelgauge->i2c, SM5713_FG_REG_MISC);
-			temp = temp & !0x0040;
-			sm5713_write_word(fuelgauge->i2c, SM5713_FG_REG_MISC, temp);
+			if (temp >= 0) {
+				temp = temp & ~0x0040;
+				sm5713_write_word(fuelgauge->i2c, SM5713_FG_REG_MISC, temp);
+			}
 		}
 		else if ((fuelgauge->info.temperature/10 > fuelgauge->info.temp_std) && (fuelgauge->info.batt_soc > 950))
 		{
 			temp = sm5713_read_word(fuelgauge->i2c, SM5713_FG_REG_MISC);
-			temp = temp | 0x0040;
-			sm5713_write_word(fuelgauge->i2c, SM5713_FG_REG_MISC, temp);
+			if (temp >= 0) {
+				temp = temp | 0x0040;
+				sm5713_write_word(fuelgauge->i2c, SM5713_FG_REG_MISC, temp);
+			}
 		}
 		pr_info("%s : temp = 0x%x, t = %d \n", __func__, temp, fuelgauge->info.temperature);
 	}
