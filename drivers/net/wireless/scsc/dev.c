@@ -295,18 +295,20 @@ void slsi_dump_system_error_buffer(struct slsi_dev *sdev)
 
 void slsi_add_log_to_system_error_buffer(struct slsi_dev *sdev, char *input_buffer)
 {
-	int pos = sdev->sys_error_log_buf.pos;
-	int buf_size = sdev->sys_error_log_buf.log_buf_size - pos;
+	int pos;
+	int buf_size;
 	u32 time[2] = { 0 };
 
 	get_kernel_timestamp(time);
 	mutex_lock(&sdev->sys_error_log_buf.log_buf_mutex);
-	sdev->sys_error_log_buf.pos += scnprintf(sdev->sys_error_log_buf.log_buf + pos, buf_size - pos, "[%d.%d] ", time[0], time[1]);
+	pos = sdev->sys_error_log_buf.pos;
+	buf_size = sdev->sys_error_log_buf.log_buf_size - pos;
+	sdev->sys_error_log_buf.pos += scnprintf(sdev->sys_error_log_buf.log_buf + pos, buf_size, "[%d.%d] ", time[0], time[1]);
 
 	pos = sdev->sys_error_log_buf.pos;
 	buf_size = sdev->sys_error_log_buf.log_buf_size - pos;
 
-	sdev->sys_error_log_buf.pos += scnprintf(sdev->sys_error_log_buf.log_buf + pos, buf_size - pos, input_buffer);
+	sdev->sys_error_log_buf.pos += scnprintf(sdev->sys_error_log_buf.log_buf + pos, buf_size, "%s", input_buffer);
 	mutex_unlock(&sdev->sys_error_log_buf.log_buf_mutex);
 }
 

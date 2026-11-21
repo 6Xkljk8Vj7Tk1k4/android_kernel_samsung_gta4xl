@@ -1090,7 +1090,7 @@ void slsi_sm_wlan_service_close(struct slsi_dev *sdev)
 	sdev->wlan_service_on = 0;
 	cm_if_state = atomic_read(&sdev->cm_if.cm_if_state);
 	if (cm_if_state != SCSC_WIFI_CM_IF_STATE_STOPPED) {
-		SLSI_INFO(sdev, "Service not stopped. cm_if_state = %d service is = %d\n", cm_if_state, sdev->service);
+		SLSI_INFO(sdev, "Service not stopped. cm_if_state = %d service is = %p\n", cm_if_state, sdev->service);
 
 		/**
 		 * Close the service if failure has occurred after service has successfully opened
@@ -1104,9 +1104,9 @@ void slsi_sm_wlan_service_close(struct slsi_dev *sdev)
 		goto exit;
 	}
 
-	SLSI_INFO_NODEV("Closing WLAN service. Service is %d\n",sdev->service);
+	SLSI_INFO_NODEV("Closing WLAN service. Service is %p\n", sdev->service);
 
-	sprintf(log_to_sys_error_buffer, "%s: Closing WLAN service. Service is %d\n", __func__, sdev->service);
+	sprintf(log_to_sys_error_buffer, "%s: Closing WLAN service. Service is %p\n", __func__, sdev->service);
 	slsi_add_log_to_system_error_buffer(sdev, log_to_sys_error_buffer);
 
 	if (sdev->service){
