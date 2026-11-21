@@ -418,6 +418,8 @@ static void exynos_dm_topological_sort(void)
 
 	indegree = kmalloc(sizeof(int) * exynos_dm->domain_count, GFP_KERNEL);
 	searchQ = kmalloc(sizeof(int) * exynos_dm->domain_count, GFP_KERNEL);
+	if (!indegree || !searchQ)
+		goto out;
 
 	for (i = 0; i < exynos_dm->domain_count; i++) {
 		// calculate Indegree of each domain
@@ -454,6 +456,9 @@ static void exynos_dm_topological_sort(void)
 
 	// Size of result queue means the number of domains which has constraint
 	exynos_dm->constraint_domain_count = r_head;
+out:
+	kfree(searchQ);
+	kfree(indegree);
 }
 
 int register_exynos_dm_constraint_table(int dm_type,
