@@ -3387,7 +3387,7 @@ unsigned int abox_get_requiring_aud_freq_in_khz(void)
 
 	gear = data->cpu_gear;
 
-	if (gear <= ARRAY_SIZE(data->pm_qos_aud))
+	if (gear >= 1 && gear <= ARRAY_SIZE(data->pm_qos_aud))
 		aud_freq = data->pm_qos_aud[gear - 1];
 	else
 		aud_freq = 0;
@@ -3584,7 +3584,7 @@ static void abox_change_cpu_gear(struct device *dev, struct abox_data *data)
 	struct abox_qos_request *request;
 	unsigned int gear = UINT_MAX;
 	unsigned int clksrc_to_aclk = 0;
-	s32 freq;
+	s32 freq = 0;
 
 	dev_dbg(dev, "%s\n", __func__);
 
@@ -3610,7 +3610,7 @@ static void abox_change_cpu_gear(struct device *dev, struct abox_data *data)
 	}
 
 	if (data->cpu_gear != gear) {
-		freq = (gear <= ARRAY_SIZE(data->pm_qos_aud)) ?
+		freq = (gear >= 1 && gear <= ARRAY_SIZE(data->pm_qos_aud)) ?
 				data->pm_qos_aud[gear - 1] : 0;
 		pm_qos_update_request(&abox_pm_qos_aud, freq);
 	}
@@ -3659,18 +3659,18 @@ int abox_request_cpu_gear(struct device *dev, struct abox_data *data,
 			request++) {
 	}
 
-	old_id = request->id;
-	old_gear = request->value;
-	request->value = gear;
-	wmb(); /* value is read after id in reading function */
-	request->id = id;
-
 	if (request - data->cpu_gear_requests >=
 			ARRAY_SIZE(data->cpu_gear_requests)) {
 		dev_err(dev, "%s: out of index. id=%x, gear=%u\n", __func__,
 				id, gear);
 		return -ENOMEM;
 	}
+
+	old_id = request->id;
+	old_gear = request->value;
+	request->value = gear;
+	wmb(); /* value is read after id in reading function */
+	request->id = id;
 
 	queue_work(data->gear_workqueue, &data->change_cpu_gear_work);
 	abox_check_cpu_gear(dev, data, old_id, old_gear, id, gear);
@@ -3749,15 +3749,15 @@ int abox_request_int_freq(struct device *dev, struct abox_data *data,
 			request->id != id; request++) {
 	}
 
-	request->value = int_freq;
-	wmb(); /* value is read after id in reading function */
-	request->id = id;
-
 	if (request - data->int_requests >= ARRAY_SIZE(data->int_requests)) {
 		dev_err(dev, "%s: out of index. id=%x, int_freq=%u\n", __func__,
 				id, int_freq);
 		return -ENOMEM;
 	}
+
+	request->value = int_freq;
+	wmb(); /* value is read after id in reading function */
+	request->id = id;
 
 	schedule_work(&data->change_int_freq_work);
 
@@ -3806,15 +3806,15 @@ static int abox_request_mif_freq(struct device *dev, struct abox_data *data,
 			request->id != id; request++) {
 	}
 
-	request->value = mif_freq;
-	wmb(); /* value is read after id in reading function */
-	request->id = id;
-
 	if (request - data->mif_requests >= ARRAY_SIZE(data->mif_requests)) {
 		dev_err(dev, "%s: out of index. id=%x, mif_freq=%u\n", __func__,
 				id, mif_freq);
 		return -ENOMEM;
 	}
+
+	request->value = mif_freq;
+	wmb(); /* value is read after id in reading function */
+	request->id = id;
 
 	schedule_work(&data->change_mif_freq_work);
 
@@ -3863,6 +3863,12 @@ int abox_request_lit_freq(struct device *dev, struct abox_data *data,
 			request->id && request->id != id; request++) {
 	}
 
+	if (request - data->lit_requests >= ARRAY_SIZE(data->lit_requests)) {
+		dev_err(dev, "%s: out of index. id=%x, freq=%u\n",
+				__func__, id, freq);
+		return -ENOMEM;
+	}
+
 	if ((request->id == id) && (request->value == freq))
 		return 0;
 
@@ -3871,12 +3877,6 @@ int abox_request_lit_freq(struct device *dev, struct abox_data *data,
 	request->id = id;
 
 	dev_info(dev, "%s(%x, %u)\n", __func__, id, freq);
-
-	if (request - data->lit_requests >= ARRAY_SIZE(data->lit_requests)) {
-		dev_err(dev, "%s: out of index. id=%x, freq=%u\n",
-				__func__, id, freq);
-		return -ENOMEM;
-	}
 
 	schedule_work(&data->change_lit_freq_work);
 
@@ -3925,6 +3925,12 @@ int abox_request_big_freq(struct device *dev, struct abox_data *data,
 			request->id && request->id != id; request++) {
 	}
 
+	if (request - data->big_requests >= ARRAY_SIZE(data->big_requests)) {
+		dev_err(dev, "%s: out of index. id=%x, freq=%u\n",
+				__func__, id, freq);
+		return -ENOMEM;
+	}
+
 	if ((request->id == id) && (request->value == freq))
 		return 0;
 
@@ -3933,12 +3939,6 @@ int abox_request_big_freq(struct device *dev, struct abox_data *data,
 	request->value = freq;
 	wmb(); /* value is read after id in reading function */
 	request->id = id;
-
-	if (request - data->big_requests >= ARRAY_SIZE(data->big_requests)) {
-		dev_err(dev, "%s: out of index. id=%x, freq=%u\n",
-				__func__, id, freq);
-		return -ENOMEM;
-	}
 
 	schedule_work(&data->change_big_freq_work);
 
@@ -3990,6 +3990,12 @@ int abox_request_hmp_boost(struct device *dev, struct abox_data *data,
 			request->id && request->id != id; request++) {
 	}
 
+	if (request - data->hmp_requests >= ARRAY_SIZE(data->hmp_requests)) {
+		dev_err(dev, "%s: out of index. id=%x, on=%u\n",
+				__func__, id, on);
+		return -ENOMEM;
+	}
+
 	if ((request->id == id) && (request->value == on))
 		return 0;
 
@@ -3998,12 +4004,6 @@ int abox_request_hmp_boost(struct device *dev, struct abox_data *data,
 	request->value = on;
 	wmb(); /* value is read after id in reading function */
 	request->id = id;
-
-	if (request - data->hmp_requests >= ARRAY_SIZE(data->hmp_requests)) {
-		dev_err(dev, "%s: out of index. id=%x, on=%u\n",
-				__func__, id, on);
-		return -ENOMEM;
-	}
 
 	schedule_work(&data->change_hmp_boost_work);
 
@@ -5520,15 +5520,15 @@ int abox_request_l2c(struct device *dev, struct abox_data *data,
 			request++) {
 	}
 
-	request->on = on;
-	wmb(); /* on is read after id in reading function */
-	request->id = id;
-
 	if (request - data->l2c_requests >= ARRAY_SIZE(data->l2c_requests)) {
 		dev_err(dev, "%s: out of index. id=%#lx, on=%d\n",
 				__func__, (unsigned long)id, on);
 		return -ENOMEM;
 	}
+
+	request->on = on;
+	wmb(); /* on is read after id in reading function */
+	request->id = id;
 
 	schedule_work(&data->l2c_work);
 
