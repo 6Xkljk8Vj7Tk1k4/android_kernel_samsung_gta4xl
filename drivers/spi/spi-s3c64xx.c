@@ -207,6 +207,8 @@ spi_dbg_store(struct device *dev, struct device_attribute *attr,
 	int ret, input_cmd;
 
 	ret = sscanf(buf, "%d", &input_cmd);
+	if (ret != 1)
+		return -EINVAL;
 
 	list_for_each_entry(check_sci, &drvdata_list, node) {
 		if (check_sci != sci)

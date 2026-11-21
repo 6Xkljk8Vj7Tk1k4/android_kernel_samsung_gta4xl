@@ -293,6 +293,8 @@ uart_dbg_store(struct device *dev, struct device_attribute *attr,
 	struct s3c24xx_uart_port *ourport;
 
 	ret = sscanf(buf, "%d", &input_cmd);
+	if (ret != 1)
+		return -EINVAL;
 
 	list_for_each_entry(ourport, &drvdata_list, node) {
 		if (&ourport->pdev->dev != dev)
