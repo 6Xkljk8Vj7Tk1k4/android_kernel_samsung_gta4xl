@@ -936,7 +936,7 @@ static void simulate_SYNC_IRQ_LOCKUP(char **argv, int argc)
 
 	if (argc) {
 		if (!kstrtol(argv[0], 10, &irq)) {
-			struct irq_desc *desc = irq_to_desc(i);
+			struct irq_desc *desc = irq_to_desc((unsigned int)irq);
 
 			if (desc && desc->action && desc->action->thread_fn)
 				desc->action->thread_fn = dummy_wait_for_completion_irq_handler;
