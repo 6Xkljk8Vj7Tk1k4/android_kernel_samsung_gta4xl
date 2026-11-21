@@ -488,8 +488,15 @@ static void update_multi_load(u64 now, int cpu, struct cfs_rq *cfs_rq, struct sc
 		ml = &se->ml;
 
 	delta = now - ml->last_update_time;
-	if (delta < 0)
+	/*
+	 * Time can go backwards here, e.g. for a task forked as !fair
+	 * (last_update_time = clock_task at fork) whose first migration
+	 * syncs it to an older cfs_rq time: resync instead of decaying.
+	 */
+	if ((s64)delta < 0) {
+		ml->last_update_time = now;
 		return;
+	}
 
 	delta >>= 10;
 	if (!delta)
