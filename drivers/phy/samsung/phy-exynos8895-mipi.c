@@ -150,7 +150,7 @@ static int __set_phy_init(struct exynos_mipi_phy *state,
 	}
 
 	/* Add INIT_DONE flag when ISO is already bypass(LCD_ON_UBOOT) */
-	if (cfg && EXYNOS_MIPI_PHY_ISO_BYPASS)
+	if (cfg & EXYNOS_MIPI_PHY_ISO_BYPASS)
 		phy_desc->data->flags |= MIPI_PHY_MxSx_INIT_DONE;
 
 	if (phy_desc->init_bit != UINT_MAX)
