@@ -1148,7 +1148,7 @@ int sm5713_get_pd_support(struct sm5713_phydrv_data *usbpd_data)
 		support_pd_role_swap =
 			of_property_read_bool(np, "support_pd_role_swap");
 	else
-		pr_info("%s : np is null\n");
+		pr_info("%s : np is null\n", __func__);
 
 	pr_info("%s : support_pd_role_swap is %d, pd_support : %d\n",
 		__func__, support_pd_role_swap, usbpd_data->pd_support);
@@ -3409,10 +3409,11 @@ static int sm5713_usbpd_probe(struct i2c_client *i2c,
 	pdic_data->port = typec_register_port(pdic_data->dev,
 		&pdic_data->typec_cap);
 	if (IS_ERR(pdic_data->port))
-		pr_err("%s : unable to register typec_register_port\n");
+		pr_err("%s : unable to register typec_register_port\n",
+		__func__);
 	else
 		pr_info("%s : success typec_register_port port=%p\n",
-		pdic_data->port);
+		__func__, pdic_data->port);
 	init_completion(&pdic_data->typec_reverse_completion);
 #endif
 #if defined(CONFIG_USB_HOST_NOTIFY)
