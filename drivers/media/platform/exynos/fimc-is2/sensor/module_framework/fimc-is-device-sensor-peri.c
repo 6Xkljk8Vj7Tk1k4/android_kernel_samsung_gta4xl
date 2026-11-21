@@ -621,11 +621,12 @@ void fimc_is_sensor_setting_mode_change(struct fimc_is_device_sensor_peri *senso
 			|| expo.short_val == 0 || again.short_val < 1000 || dgain.short_val < 1000
 			|| expo.middle_val == 0 || again.middle_val < 1000 || dgain.middle_val < 1000) {
 			err("[%s] invalid mode change settings exp(%d %d %d), again(%d %d %d), dgain(%d %d %d)\n",
-				__func__, expo.long_val, expo.short_val,
-				again.long_val, again.short_val, dgain.long_val, dgain.short_val);
+				__func__, expo.long_val, expo.short_val, expo.middle_val,
+				again.long_val, again.short_val, again.middle_val,
+				dgain.long_val, dgain.short_val, dgain.middle_val);
 			expo.long_val = expo.short_val = expo.middle_val = sensor_peri->cis.cis_data->low_expo_start;
 			again.long_val = again.short_val = again.middle_val = 1000;
-			dgain.long_val = dgain.short_val = again.middle_val = 1000;
+			dgain.long_val = dgain.short_val = dgain.middle_val = 1000;
 		}
 
 		tgain[EXPOSURE_GAIN_LONG] = fimc_is_sensor_calculate_tgain(dgain.long_val, again.long_val);
@@ -639,7 +640,7 @@ void fimc_is_sensor_setting_mode_change(struct fimc_is_device_sensor_peri *senso
 	dbg_sensor(1, "[%s]num_data(%d): expo(L(%d), M(%d), S(%d) / again(L(%d), M(%d), S(%d) / dgain(L(%d), M(%d), S(%d)\n",
 		__func__, num_data, expo.long_val, expo.middle_val, expo.short_val,
 				again.long_val, again.middle_val, again.short_val,
-				dgain.long_val, dgain.middle_val, dgain.middle_val);
+				dgain.long_val, dgain.middle_val, dgain.short_val);
 
 	if (sensor_peri->cis.long_term_mode.sen_strm_off_on_enable) {
 		CALL_CISOPS(&sensor_peri->cis, cis_set_long_term_exposure, sensor_peri->subdev_cis);
