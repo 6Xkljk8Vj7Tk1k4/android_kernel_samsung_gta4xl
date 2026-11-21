@@ -535,6 +535,10 @@ int sm5713_usbpd_uvdm_in_request_message(void *data)
 			cur_set_data = SEC_TX_HEADER.cur_size;
 			cur_set_num = SEC_TX_HEADER.order_cur_set;
 			/* 2. copy data to buffer */
+			if (rcv_data_size + SEC_UVDM_MAXDATA_NORMAL > MAX_INPUT_DATA) {
+				pr_err("%s: too many data sets\n", __func__);
+				return -EOVERFLOW;
+			}
 			for (i = 0 ; i < SEC_UVDM_MAXDATA_NORMAL; i++)
 				in_data[rcv_data_size++] =
 					uvdm_data_obj[2+i/SEC_UVDM_ALIGN].byte[i%SEC_UVDM_ALIGN];
