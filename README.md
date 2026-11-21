@@ -36,14 +36,15 @@ one built for the 4.14 kernel.
 | Cameras: front and rear, photo and 1080p30 video | works |
 | Video: hardware decode; encoders AVC, HEVC, VP9, VP8, MPEG-4, H.263 | works |
 | Sensors: rotation, light and the rest of the sensor hub | works |
-| Modem | baseband boots, RIL up, signal without a SIM; calls and data with a SIM not tested |
-| GNSS | HAL talks to the chip; a position fix not tested |
+| Modem | registers on LTE and carries mobile data with a SIM; calls and SMS not tested |
+| GNSS | the receiver starts and reports satellites; a position fix not tested |
 | Charging | works from USB, also with the tablet off; AFC and USB PD chargers not tested |
 | Suspend and resume, wake-up by power key, alarm and Wi-Fi | works |
 | CPU idle: cluster power-down, SICD | works |
 | Thermal throttling of CPU, GPU and ISP, CPU hotplug | works, same steps as 4.14 |
 | Restart, restart to recovery, power-off, restart after a panic | works |
 | USB: adb, MTP, PTP, RNDIS tethering, MIDI | works |
+| Wi-Fi hotspot | starts on `wlan1` and Android sets up forwarding (the chip is either a client or an access point, so the client is off meanwhile); no device connected through it yet |
 
 Known gaps:
 
@@ -59,6 +60,10 @@ Known gaps:
   releases newer than any public source drop.
 - Three warnings at boot that the 4.14 kernel prints as well (a grip sensor
   sysfs file, two GPIO lookups of the RT5665).
+- Seen once, cause unknown: after an unlock one `tz_worker_thread` entered the
+  secure world in a loop (the secure OS kept its request mask at one core),
+  which keeps that core busy until it is taken offline and online again or
+  the tablet restarts. The TEE driver is the 4.14 kernel's.
 
 ## What is in the branch
 
@@ -166,7 +171,14 @@ stable branch that has them or ported by hand (noted in the commit message):
 - **Configuration** as on the 4.14 branch: SLAB freelist randomisation and
   hardening, `BUG_ON_DATA_CORRUPTION`, `PANIC_ON_OOPS`, restricted `dmesg`, SYN
   cookies, drivers and protocols the tablet does not have removed; in
-  addition stack variables are zero-initialised.
+  addition stack variables are zero-initialised. Of the options Android asks
+  of a 4.19 kernel (`android-base.config`), 17 are left out on purpose:
+  Mobile IPv6, VTI tunnels, PPP with L2TP and PPTP, DCCP connection tracking
+  and the connection tracking helpers Android never attaches. The two it does
+  attach when tethering starts, FTP and PPTP, are built: without either one
+  netd's rule batch fails and tethering does not come up. The builder
+  repository's tablet test compares the configuration with Android's list
+  and holds the reason for each option that is missing.
 
 Every new kernel CVE is checked against the files this configuration actually
 compiles (kernel CNA `vulns.git`, headers through kbuild's `.o.cmd` lists);
