@@ -276,7 +276,7 @@ char *slsi_print_channel_list(int channel_list[], int channel_count)
 
 	if (!string) {
 		SLSI_ERR_NODEV("Failed to allocate channel string\n");
-		return "-1";
+		return NULL;
 	}
 	for (i = 0; i < channel_count && slen < max_size; i++)
 		slen += snprintf(&string[slen], max_size - slen, "%d ", channel_list[i]);
@@ -1405,6 +1405,7 @@ static int slsi_set_vendor_ie(struct wiphy *wiphy,
 		{
 			if (!nla_len(attr))
 				break;
+			kfree(ie_list);
 			ie_list =  kmalloc(nla_len(attr), GFP_KERNEL);
 			if (!ie_list) {
 				SLSI_ERR(sdev, "No memory for ie_list!");
@@ -1561,8 +1562,11 @@ static int slsi_set_bssid_blacklist(struct wiphy *wiphy, struct wireless_dev *wd
 		}
 		ret = slsi_set_acl(sdev, net_dev);
 	}
+	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
+	return ret;
 
 exit:
+	kfree(acl_data);
 	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
 	return ret;
 }
@@ -4325,7 +4329,7 @@ void slsi_rx_event_log_indication(struct slsi_dev *sdev, struct net_device *dev,
 			iter = i;
 			lim = iter + tlv_data[iter + 1] + 2;
 			iter += 7; /* 1byte (id) + 1byte(length) + 3byte (oui) + 2byte */
-			while (iter < lim && lim <= i + tag_len) {
+			while (iter < lim && lim <= i + tag_len && channel_count < MAX_CHANNEL_COUNT) {
 				channel_val = le16_to_cpu(*((__le16 *)&tlv_data[iter]));
 				channel_list[channel_count] = ieee80211_frequency_to_channel(channel_val / 2);
 				if (channel_list[channel_count] < 1 || channel_list[channel_count] > 196) {
