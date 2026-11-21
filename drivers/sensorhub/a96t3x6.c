@@ -2634,7 +2634,7 @@ static DEVICE_ATTR(grip_2ch, 0444, grip_2ch_show, NULL);
 static DEVICE_ATTR(grip_baseline_2ch, 0444, grip_2ch_baseline_show, NULL);
 static DEVICE_ATTR(grip_raw_2ch, 0444, grip_2ch_raw_show, NULL);
 static DEVICE_ATTR(grip_check_2ch, 0444, grip_2ch_check_show, NULL);
-static DEVICE_ATTR(unknown_state_2ch, 0664,
+static DEVICE_ATTR(unknown_state_2ch, 0444,
 		grip_2ch_unknown_state_show, NULL);
 #endif
 #ifdef CONFIG_SENSOR_A96T3X6_LDO_SHARE
