@@ -394,19 +394,20 @@ static ssize_t store_ufc_table_change(struct kobject *kobj, const char *buf,
 		return -EINVAL;
 	}
 
-	if (edit_row < 0 || edit_row > ufc.table_row) {
-		pr_err("input row is between 0 and %d\n", ufc.table_row);
+	if (edit_row >= ufc.table_row + ufc.lit_table_row) {
+		pr_err("input row is between 0 and %u\n",
+				ufc.table_row + ufc.lit_table_row - 1);
 		return -EINVAL;
 	}
 
-	if (edit_col < 0 || edit_col > ufc.table_col) {
-		pr_err("input row is between 0 and %d\n", ufc.table_row);
+	if (edit_col >= ufc.table_col) {
+		pr_err("input col is between 0 and %u\n", ufc.table_col - 1);
 		return -EINVAL;
 	}
 
 	table_info->ufc_table[edit_col][edit_row] = edit_freq;
 
-	return ret;
+	return count;
 }
 
 static ssize_t show_ufc_table_change(struct kobject *kobj, struct attribute *attr,
