@@ -182,10 +182,11 @@ int sm5713_i2c_read_byte(struct i2c_client *client, u8 command)
 {
 	u8 ret = 0;
 	int retry = 0;
+	int err;
 
-	sm5713_read_reg(client, command, &ret);
+	err = sm5713_read_reg(client, command, &ret);
 
-	while (ret < 0) {
+	while (err < 0) {
 		pr_info("[%s:%s] reg(0x%x), retrying...\n",
 			MUIC_DEV_NAME, __func__, command);
 		if (retry > 10) {
@@ -194,7 +195,7 @@ int sm5713_i2c_read_byte(struct i2c_client *client, u8 command)
 			break;
 		}
 		msleep(100);
-		sm5713_read_reg(client, command, &ret);
+		err = sm5713_read_reg(client, command, &ret);
 		retry++;
 	}
 
@@ -216,8 +217,12 @@ int sm5713_i2c_write_byte(struct i2c_client *client,
 	while (ret < 0) {
 		pr_info("[%s:%s] reg(0x%x), retrying...\n",
 			MUIC_DEV_NAME, __func__, command);
-		sm5713_read_reg(client, command, &written);
-		if (written < 0)
+		if (retry > 10) {
+			pr_err("[%s:%s] retry failed!!\n",
+					MUIC_DEV_NAME, __func__);
+			break;
+		}
+		if (sm5713_read_reg(client, command, &written) < 0)
 			pr_err("[%s:%s] reg(0x%x)\n",
 				MUIC_DEV_NAME, __func__, command);
 		msleep(100);
