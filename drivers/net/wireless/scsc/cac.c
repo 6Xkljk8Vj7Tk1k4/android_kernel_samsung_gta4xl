@@ -281,7 +281,7 @@ static int cac_send_addts(struct slsi_dev *sdev, int id, int ebw)
 	struct ieee80211_hdr    *hdr;
 	u8                      *buf = NULL;
 	u8                      *bssid;
-	u8                      r = 0;
+	int                     r = 0;
 
 	entry = find_tspec_entry(id, 0);
 	if (entry == NULL) {
@@ -335,7 +335,7 @@ static int cac_send_addts(struct slsi_dev *sdev, int id, int ebw)
 		dialog_token_next++;
 	req->hdr.dialog_token = dialog_token_next++;
 	req->hdr.status_code = 0;
-	tsid = (CAC_GET_LE24(req->tspec.ts_info) >> 1) & 0xF;
+	tsid = (CAC_GET_LE24(entry->tspec.ts_info) >> 1) & 0xF;
 
 	/* Find the value of PSB in TSPEC. If PSB is unspecified; fill the
 	 * value from UAPSD value stored in Peer structure for the AC
@@ -437,7 +437,7 @@ static int cac_send_delts(struct slsi_dev *sdev, int id)
 	struct ieee80211_hdr    *hdr;
 	u8                      *buf = NULL;
 	u8                      *bssid;
-	u8                      r = 0;
+	int                     r = 0;
 	struct slsi_peer        *stapeer;
 
 	entry = find_tspec_entry(id , 1);

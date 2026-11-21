@@ -4766,7 +4766,7 @@ next_scan:
 		SLSI_MUTEX_UNLOCK(ndev_vif->scan_result_mutex);
 
 		/* Select the channel to use */
-		for (i = 0, j = 0; i < SLSI_AP_AUTO_CHANLS_LIST_FROM_HOSTAPD_MAX; i++, j = j + 5) {
+		for (i = 0, j = 0; i < SLSI_AP_AUTO_CHANLS_LIST_FROM_HOSTAPD_MAX && channels[j]; i++, j = j + 5) {
 			SLSI_NET_DBG3(dev, SLSI_CFG80211, "score[%d]:%d\n", i, scan_result_count[i]);
 			if (scan_result_count[i] <= scan_result_count[min_index]) {
 				min_index = i;
