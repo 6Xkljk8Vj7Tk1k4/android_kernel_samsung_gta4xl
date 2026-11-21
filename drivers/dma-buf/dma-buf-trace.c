@@ -381,13 +381,11 @@ int dmabuf_trace_alloc(struct dma_buf *dmabuf)
 	INIT_LIST_HEAD(&buffer->ref_list);
 	buffer->dmabuf = dmabuf;
 
-	mutex_lock(&trace_lock);
-	list_add_tail(&buffer->node, &buffer_list);
-	mutex_unlock(&trace_lock);
-
 	ref = kzalloc(sizeof(*ref), GFP_KERNEL);
-	if (!ref)
+	if (!ref) {
+		kfree(buffer);
 		return -ENOMEM;
+	}
 	ref->buffer = buffer;
 
 	/*
@@ -409,10 +407,12 @@ int dmabuf_trace_alloc(struct dma_buf *dmabuf)
 	if (IS_ERR(task)) {
 		mutex_unlock(&trace_lock);
 		kfree(ref);
+		kfree(buffer);
 		return PTR_ERR(task);
 	}
 	ref->task = task;
 
+	list_add_tail(&buffer->node, &buffer_list);
 	list_add_tail(&ref->task_node, &task->ref_list);
 	list_add_tail(&ref->buffer_node, &buffer->ref_list);
 

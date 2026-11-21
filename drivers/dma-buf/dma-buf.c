@@ -122,6 +122,9 @@ static int dma_buf_file_release(struct inode *inode, struct file *file)
 		return -EINVAL;
 
 	dmabuf = file->private_data;
+	/* dma_buf_export() failed: it has unlinked and freed the dmabuf */
+	if (!dmabuf)
+		return 0;
 
 	mutex_lock(&db_list.lock);
 	list_del(&dmabuf->list_node);
@@ -666,15 +669,23 @@ struct dma_buf *dma_buf_export(const struct dma_buf_export_info *exp_info)
 
 	return dmabuf;
 
-err_file:
-	fput(file);
 err_sysfs:
+	mutex_lock(&db_list.lock);
+	list_del(&dmabuf->list_node);
+	mutex_unlock(&db_list.lock);
+	dmabuf_trace_free(dmabuf);
+err_file:
 	/*
 	 * Set file->f_path.dentry->d_fsdata to NULL so that when
 	 * dma_buf_release() gets invoked by dentry_ops, it exits
-	 * early before calling the release() dma_buf op.
+	 * early before calling the release() dma_buf op, and
+	 * file->private_data so that dma_buf_file_release() does not
+	 * touch the dmabuf freed below. Both before fput(), whose final
+	 * part may run later.
 	 */
 	file->f_path.dentry->d_fsdata = NULL;
+	file->private_data = NULL;
+	fput(file);
 err_dmabuf:
 	kfree(dmabuf->exp_name);
 err_expname:
