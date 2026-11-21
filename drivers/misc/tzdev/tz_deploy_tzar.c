@@ -85,6 +85,7 @@ static __ref int tz_deploy_handler(void *arg)
 	struct cmd_startup_loader_reply_upload_container reply;
 	void *tzar;
 	unsigned int attempt;
+	bool loaded = false;
 	(void)arg;
 
 	/* initialize return value and reply structure */
@@ -157,6 +158,7 @@ static __ref int tz_deploy_handler(void *arg)
 		}
 
 		ret = 0;
+		loaded = true;
 		tzdev_print(0, "[debug] Startuploader complete\n");
 		break;
 
@@ -175,9 +177,11 @@ static __ref int tz_deploy_handler(void *arg)
 	if (reply.base.base.cmd != CMD_STARTUP_LOADER_REPLY_UPLOAD_CONTAINER)
 		tzdev_print(0, "tzdev: iwsock wrong cmd. cmd=%u\n", reply.base.base.cmd);
 
-	if (ret)
+	if (!loaded) {
 		tzdev_print(0, "tzdev: Startuploader failed\n");
-	else {
+		if (!ret)
+			ret = -EIO;
+	} else {
 		tz_iwsock_release(sd);
 		tzdev_mem_release(command.buf_desc.id);
 		vfree(tzar);
