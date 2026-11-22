@@ -1243,6 +1243,11 @@ static void check_marker(void *addr, int size, struct hex_dump_pages *hdp)
 	BUG();
 }
 
+#endif /* CONFIG_ZRAM_LRU_WRITEBACK */
+
+/* Also used by the read path, which is built without the LRU writeback. */
+struct hex_dump_pages;
+
 static void handle_decomp_fail(char *comp, int err, u32 index, void *src,
 			       unsigned int size, struct hex_dump_pages *hdp)
 {
@@ -1258,9 +1263,11 @@ static void handle_decomp_fail(char *comp, int err, u32 index, void *src,
 		}
 	}
 
+#ifdef CONFIG_ZRAM_LRU_WRITEBACK
 	if (hdp)
 		print_hex_dump_pages(hdp->pages, hdp->nr_pages, hdp->idx);
 	else
+#endif
 		print_hex_dump(KERN_DEBUG, "", DUMP_PREFIX_OFFSET, 16, 1, src,
 				size, 1);
 
@@ -1269,6 +1276,8 @@ static void handle_decomp_fail(char *comp, int err, u32 index, void *src,
 	else
 		panic("zram decomp failed");
 }
+
+#ifdef CONFIG_ZRAM_LRU_WRITEBACK
 
 static int zram_writeback_fill_page(struct zram *zram, u32 index,
 				struct zwbs **zwbs, int idx, bool ppr)
@@ -2996,10 +3005,10 @@ static int __zram_bvec_write(struct zram *zram, struct bio_vec *bvec,
 	void *src, *dst, *mem;
 	struct zcomp_strm *zstrm;
 	struct page *page = bvec->bv_page;
-	struct mem_cgroup *memcg = page_memcg(page);
 	unsigned long element = 0;
 	enum zram_pageflags flags = 0;
 #ifdef CONFIG_ZRAM_LRU_WRITEBACK
+	struct mem_cgroup *memcg = page_memcg(page);
 	unsigned long irq_flags;
 #endif
 

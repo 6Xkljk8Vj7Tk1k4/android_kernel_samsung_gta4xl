@@ -41,11 +41,16 @@ config ZRAM_MEMORY_TRACKING
 	  See Documentation/blockdev/zram.txt for more information.
 
 config ZRAM_LRU_WRITEBACK
-	bool
+	bool "Samsung's LRU-based zram writeback (SQZR)"
 	depends on ZRAM_WRITEBACK
 	default y
 	help
 	  This feature supports zram lru-based writeback (SQZR).
+
+	  It keeps every stored page on one LRU list under one spinlock,
+	  taken with interrupts off on each zram read, write and free, and
+	  adds a list head to each slot. Say N unless Samsung's userspace
+	  drives the writeback.
 
 config ZRAM_LRU_WRITEBACK_LIMIT
 	int "Limit zram lru writeback"
