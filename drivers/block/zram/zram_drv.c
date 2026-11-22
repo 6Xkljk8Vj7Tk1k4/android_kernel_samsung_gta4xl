@@ -50,7 +50,12 @@ static DEFINE_IDR(zram_index_idr);
 static DEFINE_MUTEX(zram_index_mutex);
 
 static int zram_major;
-static const char *default_compressor = "lzo-rle";
+/*
+ * lz4 decompresses about twice as fast as lzo-rle on these cores, at a slightly
+ * lower ratio; swap-in is what an app switch waits for. Nothing in this ROM sets
+ * comp_algorithm, so this default is what zram0 uses.
+ */
+static const char *default_compressor = "lz4";
 
 static bool is_lzorle;
 static unsigned char lzo_marker[4] = {0x11, 0x00, 0x00};
