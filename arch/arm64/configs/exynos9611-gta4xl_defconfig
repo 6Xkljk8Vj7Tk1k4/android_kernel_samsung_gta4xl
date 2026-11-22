@@ -55,7 +55,7 @@ CONFIG_ARM64_SW_TTBR0_PAN=y
 # CONFIG_ARM64_RAS_EXTN is not set
 # CONFIG_ARM64_SVE is not set
 CONFIG_RANDOMIZE_BASE=y
-CONFIG_CMDLINE="ignore_loglevel cgroup.memory=nokmem"
+CONFIG_CMDLINE="ignore_loglevel cgroup.memory=nokmem cgroup_disable=pressure"
 CONFIG_CMDLINE_EXTEND=y
 # CONFIG_EFI is not set
 CONFIG_COMPAT=y
