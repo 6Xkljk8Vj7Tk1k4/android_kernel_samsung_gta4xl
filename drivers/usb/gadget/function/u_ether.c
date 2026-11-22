@@ -548,14 +548,20 @@ static void alloc_tx_buffer(struct eth_dev *dev)
 
 static int tx_task(struct eth_dev *dev, struct usb_request *req)
 {
-	struct usb_ep *in = dev->port_usb->in_ep;
+	/* gether_disconnect() can clear port_usb at any time */
+	struct gether *port_usb = READ_ONCE(dev->port_usb);
+	struct usb_ep *in;
 	int length = req->length;
 	int retval;
+
+	if (!port_usb)
+		return -ENOTCONN;
+	in = port_usb->in_ep;
 
 	req->complete = tx_complete;
 
 	/* NCM requires no zlp if transfer is dwNtbInMaxSize */
-	if (dev->port_usb->is_fixed && length == dev->port_usb->fixed_in_len &&
+	if (port_usb->is_fixed && length == port_usb->fixed_in_len &&
 		(length % in->maxpacket) == 0)
 		req->zero = 0;
 	else
@@ -822,8 +828,12 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 	}
 
 	if (retval) {
-		if (!eth_multi_pkt_xfer)
-			dev_kfree_skb_any(skb);
+		/* the RNDIS copy paths freed the skb already */
+		if (req->context)
+			dev_kfree_skb_any(req->context);
+		req->context = NULL;
+		/* drop what a multi-packet request had collected */
+		req->length = 0;
 drop:
 		dev->net->stats.tx_dropped++;
 multiframe:
@@ -1356,7 +1366,9 @@ struct net_device *gether_connect(struct gether *link)
 
 	if (!dev)
 		return ERR_PTR(-EINVAL);
-	link->header = kzalloc(sizeof(*header), GFP_ATOMIC);
+	/* one header per binding: freed in rndis_unbind(), not on disconnect */
+	if (!link->header)
+		link->header = kzalloc(sizeof(*header), GFP_ATOMIC);
 
 	if (!link->header) {
 		pr_err("RNDIS header memory allocation failed.\n");
@@ -1415,7 +1427,7 @@ struct net_device *gether_connect(struct gether *link)
 fail0:
 	/* caller is responsible for cleanup on error */
 	if (result < 0) {
-		kfree(link->header);
+		/* keep link->header for the next connect */
 fail:
 		return ERR_PTR(result);
 	}
@@ -1453,7 +1465,8 @@ void gether_free_request(struct gether *link)
 					struct usb_request, list);
 		list_del(&req->list);
 		spin_unlock(&dev->tx_req_lock);
-		if (link->multi_pkt_xfer)
+		/* prealloc() allocated a buffer for every non-NCM request */
+		if (!link->is_fixed)
 			kfree(req->buf);
 		usb_ep_free_request(link->in_ep, req);
 		spin_lock(&dev->tx_req_lock);

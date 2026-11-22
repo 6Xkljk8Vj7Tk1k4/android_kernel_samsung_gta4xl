@@ -1059,6 +1059,8 @@ static void rndis_unbind(struct usb_configuration *c, struct usb_function *f)
 	usb_ep_free_request(rndis->notify, rndis->notify_req);
 
 	gether_free_request(&rndis->port);
+	kfree(rndis->port.header);
+	rndis->port.header = NULL;
 
 #ifdef CONFIG_USB_CONFIGFS_UEVENT
 	opts = container_of(f->fi, struct f_rndis_opts, func_inst);
