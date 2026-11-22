@@ -644,6 +644,10 @@ static int __init init_lbt(void)
 {
 	struct device_node *dn = of_find_node_by_path("/ems");
 
+	/* the 9610 device tree has the node under /cpus, as 4.14 read it */
+	if (!dn)
+		dn = of_find_node_by_path("/cpus/ems");
+
 	if (alloc_lbt_overutil()) {
 		pr_err("LBT(%s): failed to allocate lbt_overutil\n", __func__);
 		of_node_put(dn);

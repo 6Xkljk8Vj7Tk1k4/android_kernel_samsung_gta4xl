@@ -368,6 +368,9 @@ static int __init init_frt(void)
 	int cpu, tcpu, cnt = 0;
 
 	dn = of_find_node_by_path("/ems");
+	/* the 9610 device tree has the node under /cpus, as 4.14 read it */
+	if (!dn)
+		dn = of_find_node_by_path("/cpus/ems");
 	if (!dn)
 		return 0;
 
