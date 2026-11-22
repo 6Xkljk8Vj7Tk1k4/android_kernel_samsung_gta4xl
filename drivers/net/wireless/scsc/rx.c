@@ -677,6 +677,7 @@ static int slsi_add_to_scan_list(struct slsi_dev *sdev, struct netdev_vif *ndev_
 		if (!current_result) {
 			SLSI_ERR(sdev, "Failed to allocate node for scan result\n");
 			SLSI_MUTEX_UNLOCK(ndev_vif->scan_result_mutex);
+			kfree_skb(skb);
 			return -1;
 		}
 		SLSI_ETHER_COPY(current_result->bssid, mgmt->bssid);
@@ -749,6 +750,7 @@ static int slsi_add_to_p2p_scan_list(struct slsi_dev *sdev, struct netdev_vif *n
 	current_result = kzalloc(sizeof(*current_result), GFP_KERNEL);
 	if (!current_result) {
 		SLSI_ERR(sdev, "Failed to allocate node for scan result\n");
+		kfree_skb(skb);
 		return -1;
 	}
 	SLSI_ETHER_COPY(current_result->bssid, mgmt->bssid);
@@ -851,6 +853,9 @@ void slsi_rx_scan_ind(struct slsi_dev *sdev, struct net_device *dev, struct sk_b
 			slsi_add_to_scan_list(sdev, ndev_vif, skb, scan_ssid, scan_id);
 		else
 			slsi_add_to_p2p_scan_list(sdev, ndev_vif, skb, scan_id);
+	} else {
+		/* no request for this scan id any more (aborted or done) */
+		kfree_skb(skb);
 	}
 
 	if (!ndev_vif->scan[scan_id].is_blocking_scan)
@@ -912,7 +917,15 @@ void slsi_handle_wips_beacon(struct slsi_dev *sdev, struct net_device *dev, stru
 #endif
 	scan_bssid = fapi_get_mgmt(skb)->bssid;
 
+	if (mgmt_len < (int)offsetof(struct ieee80211_mgmt, u.beacon.variable)) {
+		SLSI_NET_DBG1(dev, SLSI_RX, "forward_beacon: frame too short (%d)\n", mgmt_len);
+		return;
+	}
 	ssid_ie = cfg80211_find_ie(WLAN_EID_SSID, mgmt->u.beacon.variable, ie_len);
+	if (!ssid_ie) {
+		SLSI_NET_DBG1(dev, SLSI_RX, "forward_beacon: no SSID element\n");
+		return;
+	}
 	ssid_len = ssid_ie[1];
 	scan_ssid = &ssid_ie[2];
 	beacon_int = mgmt->u.beacon.beacon_int;
@@ -4235,7 +4248,7 @@ void slsi_rx_send_frame_cfm_async(struct slsi_dev *sdev, struct net_device *dev,
 			      fapi_get_vif(skb), host_tag, req_status);
 	}
 	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
-	kfree(skb);
+	kfree_skb(skb);
 }
 #endif
 
