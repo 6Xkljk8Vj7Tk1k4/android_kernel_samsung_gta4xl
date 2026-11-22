@@ -1050,6 +1050,8 @@ static const __u8 bos_desc_len[256] = {
 	[USB_SSP_CAP_TYPE]          = USB_DT_USB_SSP_CAP_SIZE(1),
 	[CONTAINER_ID_TYPE]         = USB_DT_USB_SS_CONTN_ID_SIZE,
 	[USB_PTM_CAP_TYPE]          = USB_DT_USB_PTM_ID_SIZE,
+	/* header plus at least one bConfigurationIndex[] entry */
+	[USB_CAP_TYPE_CONFIG_SUMMARY] = sizeof(struct usb_config_summary_descriptor) + 1,
 };
 
 /* Get BOS descriptor set */
