@@ -176,7 +176,7 @@ static void dmabuf_trace_free_ref_force(struct dmabuf_trace_ref *ref)
 static int dmabuf_trace_free_ref(struct dmabuf_trace_ref *ref)
 {
 	/* The reference has never been registered */
-	if (WARN_ON(ref->refcount == 0))
+	if (ref->refcount == 0)
 		return -EINVAL;
 
 	if (--ref->refcount == 0)
@@ -190,15 +190,10 @@ static int dmabuf_trace_task_release(struct inode *inode, struct file *file)
 	struct dmabuf_trace_task *task = file->private_data;
 	struct dmabuf_trace_ref *ref, *tmp;
 
-	if (!(task->task->flags & PF_EXITING)) {
-		pr_err("%s: Invalid to close '%d' on process '%s'(%x, %lx)\n",
-		       __func__, task->task->pid, task->task->comm,
-		       task->task->flags, task->task->state);
-
-		dump_stack();
-	}
-
-	put_task_struct(task->task);
+	if (!(task->task->flags & PF_EXITING))
+		pr_err_ratelimited("%s: Invalid to close '%d' on process '%s'(%x, %lx)\n",
+				   __func__, task->task->pid, task->task->comm,
+				   task->task->flags, task->task->state);
 
 	mutex_lock(&trace_lock);
 
@@ -208,6 +203,8 @@ static int dmabuf_trace_task_release(struct inode *inode, struct file *file)
 	list_del(&task->node);
 
 	mutex_unlock(&trace_lock);
+
+	put_task_struct(task->task);
 
 	dmabuf_trace_remove_debugfs(task);
 
