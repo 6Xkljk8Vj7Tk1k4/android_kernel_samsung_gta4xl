@@ -828,4 +828,5 @@ void exfat_free_upcase_table(struct exfat_sb_info *sbi)
 #else
 	vfree(sbi->vol_utbl);
 #endif
+	sbi->vol_utbl = NULL;
 }
