@@ -2663,6 +2663,8 @@ const struct file_operations proc_pid_filemap_info_operations = {
 static ssize_t pid_io_record_read(struct file *file, char __user *buf,
 			size_t count, loff_t *ppos)
 {
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
 	return read_record(buf, count, ppos);
 }
 
@@ -2676,6 +2678,9 @@ static ssize_t pid_io_record_write(struct file *file,
 	int rv;
 	struct task_struct *task;
 	bool ret = true;
+
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
 
 	memset(buffer, 0, sizeof(buffer));
 	if (count > sizeof(buffer) - 1)
