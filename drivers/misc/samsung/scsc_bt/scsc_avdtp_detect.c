@@ -447,13 +447,8 @@ static void scsc_avdtp_detect_check_discover_for_snk_seids(uint16_t hci_connecti
 		if ((is_tx && HCI_L2CAP_CONF_TSEP(data, i) == HCI_L2CAP_CONF_TSEP_SNK) ||
 			(!is_tx && HCI_L2CAP_CONF_TSEP(data, i) == HCI_L2CAP_CONF_TSEP_SRC)) {
 
-			if (avdtp_hci)
-				spin_unlock(&avdtp_hci->lock);
-
-			seid = kmalloc(sizeof(struct scsc_bt_avdtp_detect_snk_seid), GFP_KERNEL);
-
-			avdtp_hci = scsc_avdtp_detect_find_or_create_hci_connection(hci_connection_handle,
-											false);
+			/* Keep the element locked: the caller unlocks the pointer it passed in */
+			seid = kmalloc(sizeof(struct scsc_bt_avdtp_detect_snk_seid), GFP_ATOMIC);
 
 			if (avdtp_hci && seid) {
 				memset(seid, 0, sizeof(struct scsc_bt_avdtp_detect_snk_seid));
@@ -629,7 +624,8 @@ void scsc_avdtp_detect_rxtx(u16 hci_connection_handle, const unsigned char *data
 		if (bt_service.bsmhcp_protocol->header.firmware_features & BSMHCP_FEATURE_AVDTP_TRANSFER_RING) {
 			uint32_t flags = 0;
 
-			if (avdtp_hci && avdtp_hci->tsep_detect.tsep == BT_AVDTP_TSEP_SNK)
+			/* is_sink was read under the element lock, avdtp_hci may be gone now */
+			if (is_sink)
 				flags |= AVDTP_SNK_FLAG_TD_MASK;
 			if (avdtp_open)
 				flags |= AVDTP_OPEN_FLAG_TD_MASK;
@@ -731,7 +727,10 @@ void scsc_avdtp_detect_reset(struct scsc_bt_avdtp_detect_hci_connection *avdtp_h
 		/* The element could have been deleted at this point by another thread before the mutext
 		 * on the list was taken. Therefore re-check.
 		 */
-		if (avdtp_hci) {
+		for (prev = bt_service.avdtp_detect.connections; prev && prev != avdtp_hci; prev = prev->next)
+			;
+		/* Only the thread that still finds it in the list may unlink and free it */
+		if (prev) {
 			prev = bt_service.avdtp_detect.connections;
 
 			if (prev && prev != avdtp_hci) {

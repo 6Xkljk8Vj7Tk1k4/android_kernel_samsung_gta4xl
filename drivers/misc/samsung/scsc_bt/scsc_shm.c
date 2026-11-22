@@ -1225,6 +1225,23 @@ ssize_t scsc_bt_shm_h4_queue_sync_helper(char __user *buf, size_t len)
 	return ret;
 }
 
+/* The write indexes come from the firmware; the read loops only end when the
+ * read index, kept modulo the ring size, reaches them */
+static bool scsc_bt_shm_h4_write_indexes_valid(void)
+{
+	if (bt_service.mailbox_hci_evt_write < BSMHCP_TRANSFER_RING_EVT_SIZE &&
+	    bt_service.mailbox_acl_rx_write < BSMHCP_TRANSFER_RING_ACL_SIZE &&
+	    bt_service.mailbox_acl_free_write < BSMHCP_TRANSFER_RING_ACL_SIZE &&
+	    bt_service.mailbox_iq_report_write < BSMHCP_TRANSFER_RING_IQ_REPORT_SIZE)
+		return true;
+
+	SCSC_TAG_ERR(BT_H4, "write index out of bounds (hci_evt=%u, acl_rx=%u, acl_free=%u, iq_report=%u)\n",
+		     bt_service.mailbox_hci_evt_write, bt_service.mailbox_acl_rx_write,
+		     bt_service.mailbox_acl_free_write, bt_service.mailbox_iq_report_write);
+	atomic_inc(&bt_service.error_count);
+	return false;
+}
+
 ssize_t scsc_bt_shm_h4_read(struct file *file, char __user *buf, size_t len, loff_t *offset)
 {
 	ssize_t consumed = 0;
@@ -1251,6 +1268,9 @@ ssize_t scsc_bt_shm_h4_read(struct file *file, char __user *buf, size_t len, lof
 	bt_service.mailbox_acl_rx_write   = bt_service.bsmhcp_protocol->header.mailbox_acl_rx_write;
 	bt_service.mailbox_acl_free_write = bt_service.bsmhcp_protocol->header.mailbox_acl_free_write;
 	bt_service.mailbox_iq_report_write = bt_service.bsmhcp_protocol->header.mailbox_iq_report_write;
+
+	/* An index outside its ring is a firmware error: the code below then sends the hardware error event */
+	scsc_bt_shm_h4_write_indexes_valid();
 
 	/* Only generate the HCI hardware error event if any pending operation has been completed
 	 * and the event hasn't already neen sent. This check assume the main while loop will exit
@@ -1324,6 +1344,8 @@ ssize_t scsc_bt_shm_h4_read(struct file *file, char __user *buf, size_t len, lof
 			bt_service.mailbox_acl_rx_write = bt_service.bsmhcp_protocol->header.mailbox_acl_rx_write;
 			bt_service.mailbox_acl_free_write = bt_service.bsmhcp_protocol->header.mailbox_acl_free_write;
 			bt_service.mailbox_iq_report_write = bt_service.bsmhcp_protocol->header.mailbox_iq_report_write;
+			if (!scsc_bt_shm_h4_write_indexes_valid())
+				break;
 		}
 
 		SCSC_TAG_DEBUG(BT_H4, "hci_evt_read=%u, hci_evt_write=%u, acl_rx_read=%u,acl_rx_write=%u\n",
