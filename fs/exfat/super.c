@@ -866,6 +866,7 @@ static int __exfat_fill_super(struct super_block *sb)
 {
 	int ret;
 	struct exfat_sb_info *sbi = EXFAT_SB(sb);
+	struct exfat_chain root_clu;
 
 	ret = exfat_read_boot_sector(sb);
 	if (ret) {
@@ -876,6 +877,18 @@ static int __exfat_fill_super(struct super_block *sb)
 	ret = exfat_verify_boot_region(sb);
 	if (ret) {
 		exfat_err(sb, "invalid boot region");
+		goto free_bh;
+	}
+
+	/*
+	 * Call exfat_count_num_clusters() before searching for up-case and
+	 * bitmap directory entries to avoid infinite loop if they are missing
+	 * and the cluster chain includes a loop.
+	 */
+	exfat_chain_set(&root_clu, sbi->root_dir, 0, ALLOC_FAT_CHAIN);
+	ret = exfat_count_num_clusters(sb, &root_clu, &root_clu.size);
+	if (ret) {
+		exfat_err(sb, "failed to count the number of clusters in root");
 		goto free_bh;
 	}
 
