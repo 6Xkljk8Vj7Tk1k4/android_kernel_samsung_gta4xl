@@ -358,7 +358,7 @@ void ion_buffer_kmap_put(struct ion_buffer *buffer);
 	pr_err(IONPREFIX format "\n", ##arg)
 
 #define perrfn(format, arg...) \
-	pr_err(IONPREFIX "%s: " format "\n", __func__, ##arg)
+	pr_err_ratelimited(IONPREFIX "%s: " format "\n", __func__, ##arg)
 
 #define perrdev(dev, format, arg...) \
 	dev_err(dev, IONPREFIX format "\n", ##arg)

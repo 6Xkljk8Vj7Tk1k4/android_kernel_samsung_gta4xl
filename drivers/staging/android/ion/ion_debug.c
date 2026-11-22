@@ -177,9 +177,14 @@ void ion_contig_heap_show_buffers(struct seq_file *s, struct ion_heap *heap,
 	struct rb_node *n;
 	struct ion_buffer **sorted = NULL;
 	int i, count = 64, ptr = 0;
+	static DEFINE_RATELIMIT_STATE(fail_rs, DEFAULT_RATELIMIT_INTERVAL, 1);
 
 	if (heap->type != ION_HEAP_TYPE_CARVEOUT &&
 	    heap->type != ION_HEAP_TYPE_DMA)
+		return;
+
+	/* without a seq_file this is the dump after a failed allocation */
+	if (!s && !__ratelimit(&fail_rs))
 		return;
 
 	ion_debug_print(s,
@@ -194,15 +199,20 @@ void ion_contig_heap_show_buffers(struct seq_file *s, struct ion_heap *heap,
 		if (buffer->heap != heap)
 			continue;
 
-		if (!sorted)
+		if (!sorted) {
 			sorted = kmalloc_array(count, sizeof(*sorted),
 					       GFP_KERNEL);
+			if (!sorted)
+				break;
+		}
 
 		if (ptr == count) {
 			struct ion_buffer **tmp;
 
 			tmp = kmalloc_array(2 * count, sizeof(*sorted),
 					    GFP_KERNEL);
+			if (!tmp)
+				break;
 			memcpy(tmp, sorted, sizeof(*sorted) * count);
 			count *= 2;
 			kfree(sorted);
