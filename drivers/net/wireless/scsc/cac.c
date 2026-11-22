@@ -1376,12 +1376,14 @@ static int cac_get_rde_tspec_ie(struct slsi_dev *sdev, u8 *assoc_rsp_ie, int ass
 		ie = cfg80211_find_ie(WLAN_EID_RIC_DATA, ie, assoc_rsp_ie_len - (ie - assoc_rsp_ie));
 		if (!ie)
 			break;
-		status = CAC_GET_LE16(&ie[4]);
-		if (status != 0)
-			continue;
-
-		tspec_count += ie[3]; /* TSPEC descriptor count */
-		ie = ie + ie[1];
+		/* RDE body: identifier(1), descriptor count(1), status code(2) */
+		if (ie[1] >= 4) {
+			status = CAC_GET_LE16(&ie[4]);
+			if (status == 0)
+				tspec_count += ie[3]; /* TSPEC descriptor count */
+		}
+		/* always step over the whole element, or the search finds it again */
+		ie += ie[1] + 2;
 	}
 
 	/* limit WMM TSPEC count to TSID_MAX */
@@ -1400,11 +1402,12 @@ static int cac_get_rde_tspec_ie(struct slsi_dev *sdev, u8 *assoc_rsp_ie, int ass
 		/* re-assoc-res can contain wmm parameter IE and wmm TSPEC IE.
 		 * we want wmm TSPEC Element)
 		 */
-		if (ie[1] > 6 && ie[6] == WMM_OUI_SUBTYPE_TSPEC_ELEMENT) {
+		if (ie[1] >= sizeof(struct wmm_tspec_element) - 2 &&
+		    ie[6] == WMM_OUI_SUBTYPE_TSPEC_ELEMENT) {
 			tspec_ie_arr[i] = ie;
 			i++;
 		}
-		ie += ie[1];
+		ie += ie[1] + 2;
 	}
 
 	return i;
@@ -1431,6 +1434,9 @@ void cac_update_roam_traffic_params(struct slsi_dev *sdev, struct net_device *de
 		SLSI_ERR(sdev, "AP peer entry not found\n");
 		return;
 	}
+
+	if (!peer->assoc_resp_ie)
+		return;
 
 	/* Find all the admitted TSPECs in assoc resp. */
 	assoc_rsp_tspec_count = cac_get_rde_tspec_ie(sdev, peer->assoc_resp_ie->data,
