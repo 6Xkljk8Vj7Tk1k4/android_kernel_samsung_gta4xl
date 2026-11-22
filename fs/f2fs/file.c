@@ -1700,16 +1700,19 @@ static int expand_inode_data(struct inode *inode, loff_t offset,
 
 		map.m_len = sbi->blocks_per_seg;
 next_alloc:
+		down_write(&sbi->pin_sem);
+
 		if (has_not_enough_free_secs(sbi, 0,
 			GET_SEC_FROM_SEG(sbi, overprovision_segments(sbi)))) {
 			down_write(&sbi->gc_lock);
 			err = __f2fs_gc(sbi, true, false, NULL_SEGNO, init_victim_map);
-			if (err && err != -ENODATA && err != -EAGAIN)
+			if (err && err != -ENODATA && err != -EAGAIN) {
+				up_write(&sbi->pin_sem);
 				goto out_err;
+			}
 			init_victim_map = false;
 		}
 
-		down_write(&sbi->pin_sem);
 		map.m_seg_type = CURSEG_COLD_DATA_PINNED;
 
 		f2fs_lock_op(sbi);
