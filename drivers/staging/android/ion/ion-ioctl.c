@@ -92,6 +92,7 @@ long ion_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case ION_IOC_ALLOC:
 	{
 		unsigned int flags = data.allocation.flags;
+		unsigned int heap_mask = data.allocation.heap_id_mask;
 		int fd;
 
 		/*
@@ -102,12 +103,26 @@ long ion_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		 * for the graphics/media HALs; SELinux lets every app ioctl
 		 * /dev/ion, so drop them for app UIDs.
 		 */
-		if (from_kuid(&init_user_ns, current_fsuid()) >= ION_AID_APP_START)
-			flags &= ~(ION_FLAG_NOZEROED | ION_FLAG_PROTECTED);
+		if (from_kuid(&init_user_ns, current_fsuid()) >= ION_AID_APP_START) {
+			unsigned int sys_id = get_ion_system_heap_id();
+			unsigned int allowed = sys_id < 32 ? 1U << sys_id : 0;
 
-		fd = ion_alloc(data.allocation.len,
-			       data.allocation.heap_id_mask,
-			       flags);
+			flags &= ~(ION_FLAG_NOZEROED | ION_FLAG_PROTECTED);
+			/*
+			 * Apps get camera, DRM and video buffers through the
+			 * HALs; directly they may only use the system heap. The
+			 * carveout and CMA heaps hold camera and DRM memory, and
+			 * an HPA request that does not fit kills every process
+			 * above adj 100 (mm/hpa.c, hpa_killer()).
+			 */
+			if (!(heap_mask & allowed))
+				pr_info_ratelimited("ion: uid %u may not use heap mask %#x\n",
+						    from_kuid(&init_user_ns, current_fsuid()),
+						    heap_mask);
+			heap_mask &= allowed;
+		}
+
+		fd = ion_alloc(data.allocation.len, heap_mask, flags);
 		if (fd < 0)
 			return fd;
 
