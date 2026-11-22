@@ -1708,9 +1708,24 @@ next_alloc:
 			err = __f2fs_gc(sbi, true, false, NULL_SEGNO, init_victim_map);
 			if (err && err != -ENODATA && err != -EAGAIN) {
 				up_write(&sbi->pin_sem);
+				map.m_len = done;
 				goto out_err;
 			}
 			init_victim_map = false;
+
+			/*
+			 * GC could not make room: do not let a pinned allocation
+			 * take the sections kept for GC and checkpoint, since
+			 * get_new_segment() BUGs when none is left. Upstream
+			 * 48ea8b200414 returns -ENOSPC from the allocation instead;
+			 * 9b84fba07b41 took only its pin_sem half.
+			 */
+			if (has_not_enough_free_secs(sbi, 0, 0)) {
+				err = -ENOSPC;
+				up_write(&sbi->pin_sem);
+				map.m_len = done;
+				goto out_err;
+			}
 		}
 
 		map.m_seg_type = CURSEG_COLD_DATA_PINNED;
@@ -1739,7 +1754,8 @@ out_err:
 		if (!map.m_len)
 			return err;
 
-		last_off = map.m_lblk + map.m_len - 1;
+		last_off = (((unsigned long long)offset) >> PAGE_SHIFT) +
+							map.m_len - 1;
 
 		/* update new size to the failed position */
 		new_size = (last_off == pg_end) ? offset + len :
