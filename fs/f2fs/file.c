@@ -3311,6 +3311,16 @@ static int f2fs_ioc_set_pin_file(struct file *filp, unsigned long arg)
 	if (!S_ISREG(inode->i_mode))
 		return -EINVAL;
 
+	/*
+	 * Pinning changes the on-disk inode and how GC treats the file's
+	 * blocks (this tree's GC never unpins): require an fd opened for
+	 * writing. Android's callers have one (uncrypt O_RDWR, vold
+	 * secdiscard O_WRONLY, libfiemap O_RDWR). No owner check: uncrypt
+	 * runs as root without CAP_FOWNER and pins a package owned by system.
+	 */
+	if (!(filp->f_mode & FMODE_WRITE))
+		return -EBADF;
+
 	if (f2fs_readonly(F2FS_I_SB(inode)->sb))
 		return -EROFS;
 
