@@ -1891,12 +1891,17 @@ static int f2fs_setflags_common(struct inode *inode, u32 iflags, u32 mask)
 		if (iflags & F2FS_NOCOMP_FL)
 			return -EINVAL;
 		if (iflags & F2FS_COMPR_FL) {
-			if (!f2fs_may_compress(inode))
+			down_write(&fi->i_sem);
+			if (!f2fs_may_compress(inode) ||
+					atomic_read(&fi->writeback) ||
+					(S_ISREG(inode->i_mode) &&
+					inode->i_size)) {
+				up_write(&fi->i_sem);
 				return -EINVAL;
-			if (S_ISREG(inode->i_mode) && inode->i_size)
-				return -EINVAL;
+			}
 
 			set_compress_context(inode);
+			up_write(&fi->i_sem);
 		}
 	}
 	if ((iflags ^ masked_flags) & F2FS_NOCOMP_FL) {
