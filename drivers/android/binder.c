@@ -5279,6 +5279,22 @@ static int binder_ioctl_get_freezer_info(struct binder_frozen_status_info *info)
 
 	return 0;
 }
+/*
+ * BINDER_FREEZE and BINDER_GET_FROZEN_INFO act on the target pid's binder
+ * state in every binder context, and nothing here checks who asks: Android
+ * leaves that to SELinux, whose policy allows them to system_server only,
+ * and only on binder_device. hwbinder_device has no ioctl allowlist, and
+ * every app domain may open /dev/hwbinder, so any app could freeze
+ * servicemanager or system_server (every synchronous call to them then fails
+ * with BR_FROZEN_REPLY until a restart) or thaw apps the freezer holds.
+ * Accept the two only on the "binder" device, where the binder_device rule
+ * decides; system_server freezes through /dev/binder (libbinder).
+ */
+static bool binder_freeze_ioctl_allowed(struct binder_proc *proc)
+{
+	return !strcmp(proc->context->name, "binder");
+}
+
 static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int ret;
@@ -5403,6 +5419,10 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		struct binder_proc **target_procs = NULL, *target_proc;
 		int target_procs_count = 0, i = 0;
 
+		if (!binder_freeze_ioctl_allowed(proc)) {
+			ret = -EPERM;
+			goto err;
+		}
 		ret = 0;
 
 		if (copy_from_user(&info, ubuf, sizeof(info))) {
@@ -5460,6 +5480,11 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	}
 	case BINDER_GET_FROZEN_INFO: {
 		struct binder_frozen_status_info info;
+
+		if (!binder_freeze_ioctl_allowed(proc)) {
+			ret = -EPERM;
+			goto err;
+		}
 		if (copy_from_user(&info, ubuf, sizeof(info))) {
 			ret = -EFAULT;
 			goto err;
