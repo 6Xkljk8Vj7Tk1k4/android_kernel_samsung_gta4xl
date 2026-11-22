@@ -391,6 +391,8 @@ int alloc_pages_highorder_except(int order, struct page **pages, int nents,
 			return 0;
 
 		/* picked < nents */
+		if (fatal_signal_pending(current))
+			break;
 		drop_slab();
 		count_vm_event(DROP_SLAB);
 		if (hpa_killer() < 0)
