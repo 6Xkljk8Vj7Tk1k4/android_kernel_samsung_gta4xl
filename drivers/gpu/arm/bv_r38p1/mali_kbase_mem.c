@@ -1661,8 +1661,6 @@ void kbase_free_alloced_region(struct kbase_va_region *reg)
 		 * on the list at termination time of the region tracker.
 		 */
 		if (!list_empty(&reg->gpu_alloc->evict_node)) {
-			mutex_unlock(&kctx->jit_evict_lock);
-
 			/*
 			 * Unlink the physical allocation before unmaking it
 			 * evictable so that the allocation isn't grown back to
@@ -1672,6 +1670,8 @@ void kbase_free_alloced_region(struct kbase_va_region *reg)
 			reg->cpu_alloc->reg = NULL;
 			if (reg->cpu_alloc != reg->gpu_alloc)
 				reg->gpu_alloc->reg = NULL;
+
+			mutex_unlock(&kctx->jit_evict_lock);
 
 			/*
 			 * If a region has been made evictable then we must
@@ -2213,24 +2213,22 @@ int kbase_mem_free_region(struct kbase_context *kctx, struct kbase_va_region *re
 		return -EINVAL;
 	}
 
-	/*
-	 * Unlink the physical allocation before unmaking it evictable so
-	 * that the allocation isn't grown back to its last backed size
-	 * as we're going to unmap it anyway.
-	 */
-	reg->cpu_alloc->reg = NULL;
-	if (reg->cpu_alloc != reg->gpu_alloc)
-		reg->gpu_alloc->reg = NULL;
-
-	/*
-	 * If a region has been made evictable then we must unmake it
+	/* If a region has been made evictable then we must unmake it
 	 * before trying to free it.
 	 * If the memory hasn't been reclaimed it will be unmapped and freed
 	 * below, if it has been reclaimed then the operations below are no-ops.
 	 */
 	if (reg->flags & KBASE_REG_DONT_NEED) {
-		KBASE_DEBUG_ASSERT(reg->cpu_alloc->type ==
-				   KBASE_MEM_TYPE_NATIVE);
+		WARN_ON(reg->cpu_alloc->type != KBASE_MEM_TYPE_NATIVE);
+		mutex_lock(&kctx->jit_evict_lock);
+		/* Unlink the physical allocation before unmaking it evictable so
+		 * that the allocation isn't grown back to its last backed size
+		 * as we're going to unmap it anyway.
+		 */
+		reg->cpu_alloc->reg = NULL;
+		if (reg->cpu_alloc != reg->gpu_alloc)
+			reg->gpu_alloc->reg = NULL;
+		mutex_unlock(&kctx->jit_evict_lock);
 		kbase_mem_evictable_unmake(reg->gpu_alloc);
 	}
 
