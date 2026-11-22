@@ -840,11 +840,20 @@ static ssize_t scsc_bt_shm_h4_read_iq_report_evt(char __user *buf, size_t len)
 		u32 index = 0;
 		u32 j = 0;
 		u32 i;
+		/* The firmware can rewrite the descriptor at any time: read the count once */
+		u8 sample_count = READ_ONCE(td->sample_count);
 
 		if (!bt_service.iq_reports_enabled)
 		{
 			BSMHCP_INCREASE_INDEX(bt_service.mailbox_iq_report_read,
 			BSMHCP_TRANSFER_RING_IQ_REPORT_SIZE);
+		}
+		else if (sample_count > HCI_IQ_REPORTING_MAX_NUM_SAMPLES)
+		{
+			/* h4_iq_report_evt and td->data hold at most 82 samples */
+			SCSC_TAG_ERR(BT_H4, "IQ report sample count is beyond max (sample_count=%u)\n",
+				     sample_count);
+			atomic_inc(&bt_service.error_count);
 		}
 		else
 		{
@@ -876,17 +885,17 @@ static ssize_t scsc_bt_shm_h4_read_iq_report_evt(char __user *buf, size_t len)
 			h4_iq_report_evt[index++] = td->packet_status;
 			h4_iq_report_evt[index++] = td->event_count & 0xFF;
 			h4_iq_report_evt[index++] = (td->event_count >> 8) & 0xFF;
-			h4_iq_report_evt[index++] = td->sample_count;
+			h4_iq_report_evt[index++] = sample_count;
 
 			/* Total length of hci event */
-			h4_iq_report_evt_len = index + (2 * td->sample_count);
+			h4_iq_report_evt_len = index + (2 * sample_count);
 
 			/* Total length of hci event parameters */
 			h4_iq_report_evt[2] = h4_iq_report_evt_len - 3;
 
-			for (i = 0; i < td->sample_count; i++) {
+			for (i = 0; i < sample_count; i++) {
 				h4_iq_report_evt[index + i] = td->data[j++];
-				h4_iq_report_evt[(index + td->sample_count) + i] = td->data[j++];
+				h4_iq_report_evt[(index + sample_count) + i] = td->data[j++];
 			}
 
 			bt_service.read_operation = BT_READ_OP_IQ_REPORT;
@@ -919,6 +928,8 @@ static ssize_t scsc_bt_shm_h4_read_hci_evt(char __user *buf, size_t len)
 
 	while (BT_READ_OP_NONE == bt_service.read_operation && 0 == ret && !bt_service.hci_event_paused && bt_service.mailbox_hci_evt_read != bt_service.mailbox_hci_evt_write) {
 		struct BSMHCP_TD_HCI_EVT *td = &bt_service.bsmhcp_protocol->hci_evt_transfer_ring[bt_service.mailbox_hci_evt_read];
+		/* The firmware can rewrite the descriptor at any time: read the handle once */
+		u16 hci_connection_handle = READ_ONCE(td->hci_connection_handle);
 
 		/* This event has already been processed - skip it */
 		if (bt_service.processed[bt_service.mailbox_hci_evt_read]) {
@@ -930,41 +941,42 @@ static ssize_t scsc_bt_shm_h4_read_hci_evt(char __user *buf, size_t len)
 		/* A connection event has been detected by the firmware */
 		if (td->event_type == BSMHCP_EVENT_TYPE_CONNECTED) {
 			/* Sanity check of the HCI connection handle */
-			if (td->hci_connection_handle >= SCSC_BT_CONNECTION_INFO_MAX) {
+			if (hci_connection_handle >= SCSC_BT_CONNECTION_INFO_MAX) {
 				SCSC_TAG_ERR(BT_H4, "connection handle is beyond max (hci_connection_handle=0x%03x)\n",
-					     td->hci_connection_handle);
+					     hci_connection_handle);
 				atomic_inc(&bt_service.error_count);
 				break;
 			}
 
 			SCSC_TAG_DEBUG(BT_H4, "connected (hci_connection_handle=0x%03x, state=%u)\n",
-				       td->hci_connection_handle, bt_service.connection_handle_list[td->hci_connection_handle].state);
+				       hci_connection_handle, bt_service.connection_handle_list[hci_connection_handle].state);
 
 			/* Update the connection table to mark it as active */
-			bt_service.connection_handle_list[td->hci_connection_handle].state = CONNECTION_ACTIVE;
-			bt_service.connection_handle_list[td->hci_connection_handle].length = 0;
+			bt_service.connection_handle_list[hci_connection_handle].state = CONNECTION_ACTIVE;
+			bt_service.connection_handle_list[hci_connection_handle].length = 0;
 
 			/* ACL data processing can now continue */
 			bt_service.acldata_paused = false;
 
 			/* A disconnection event has been detected by the firmware */
-		} else if (td->event_type == BSMHCP_EVENT_TYPE_DISCONNECTED) {
+		} else if (td->event_type == BSMHCP_EVENT_TYPE_DISCONNECTED &&
+			   hci_connection_handle < SCSC_BT_CONNECTION_INFO_MAX) {
 			SCSC_TAG_DEBUG(BT_H4, "disconnected (hci_connection_handle=0x%03x, state=%u)\n",
-				       td->hci_connection_handle, bt_service.connection_handle_list[td->hci_connection_handle].state);
+				       hci_connection_handle, bt_service.connection_handle_list[hci_connection_handle].state);
 
 			/* If this ACL connection had an avdtp stream, mark it gone and interrupt the bg */
-			if (scsc_avdtp_detect_reset_connection_handle(td->hci_connection_handle))
+			if (scsc_avdtp_detect_reset_connection_handle(hci_connection_handle))
 				wmb();
 
 			/* If the connection is marked as active the ACL disconnect packet hasn't yet arrived */
-			if (CONNECTION_ACTIVE == bt_service.connection_handle_list[td->hci_connection_handle].state) {
+			if (CONNECTION_ACTIVE == bt_service.connection_handle_list[hci_connection_handle].state) {
 				/* Pause the HCI event procssing until the ACL disconnect packet arrives */
 				bt_service.hci_event_paused = true;
 				break;
 			}
 
 			/* Firmware does not have more ACL data - Mark the connection as inactive */
-			bt_service.connection_handle_list[td->hci_connection_handle].state = CONNECTION_NONE;
+			bt_service.connection_handle_list[hci_connection_handle].state = CONNECTION_NONE;
 		} else if (td->event_type == BSMHCP_EVENT_TYPE_IQ_REPORT_ENABLED) {
 			bt_service.iq_reports_enabled = true;
 		} else if (td->event_type == BSMHCP_EVENT_TYPE_IQ_REPORT_DISABLED) {
@@ -1167,11 +1179,13 @@ ssize_t scsc_bt_shm_h4_queue_sync_helper(char __user *buf, size_t len)
 
 		while (mailbox_hci_evt_read != bt_service.mailbox_hci_evt_write) {
 			struct BSMHCP_TD_HCI_EVT *td = &bt_service.bsmhcp_protocol->hci_evt_transfer_ring[mailbox_hci_evt_read];
+			u16 hci_connection_handle = READ_ONCE(td->hci_connection_handle);
 
-			if (td->event_type & BSMHCP_EVENT_TYPE_CONNECTED && acl_td->hci_connection_handle == td->hci_connection_handle) {
+			if (td->event_type & BSMHCP_EVENT_TYPE_CONNECTED && acl_td->hci_connection_handle == hci_connection_handle &&
+			    hci_connection_handle < SCSC_BT_CONNECTION_INFO_MAX) {
 				/* Update the connection table to mark it as active */
-				bt_service.connection_handle_list[td->hci_connection_handle].state = CONNECTION_ACTIVE;
-				bt_service.connection_handle_list[td->hci_connection_handle].length = 0;
+				bt_service.connection_handle_list[hci_connection_handle].state = CONNECTION_ACTIVE;
+				bt_service.connection_handle_list[hci_connection_handle].length = 0;
 
 				/* ACL data processing can now continue */
 				bt_service.acldata_paused = false;
