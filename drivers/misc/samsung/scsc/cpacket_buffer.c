@@ -258,12 +258,27 @@ uint32_t cpacketbuffer_read(struct cpacketbuffer *buffer, void *buf, uint32_t nu
 	uint8_t  *read_start;
 	uint32_t num_packets;
 	uint32_t num_available_packets;
+	uint32_t read_index;
+	uint32_t write_index;
 
-	if (buf == NULL || cpacketbuffer_is_empty(buffer))
+	if (buf == NULL)
+		return 0;
+
+	/* Both indexes are in memory the firmware can write: read each once and
+	 * refuse values outside the ring, the split below depends on them */
+	read_index = READ_ONCE(*buffer->read_index);
+	write_index = READ_ONCE(*buffer->write_index);
+	if (read_index >= buffer->num_packets || write_index >= buffer->num_packets) {
+		SCSC_TAG_ERR(CPKTBUFF, "Invalid index read_index=%u write_index=%u num_packets=%u\n",
+			     read_index, write_index, buffer->num_packets);
+		return 0;
+	}
+
+	if (read_index == write_index)
 		return 0;
 
 	/* Work out where we're reading from */
-	read_start = cpacketbuffer_index_to_address(buffer, buffer->read_index);
+	read_start = (uint8_t *)buffer->buffer + read_index * buffer->packet_size;
 	num_packets = num_bytes / buffer->packet_size;
 	if (num_bytes % buffer->packet_size != 0)
 		/* Partial data packet read requested, this means we remove the whole thing */
@@ -271,15 +286,17 @@ uint32_t cpacketbuffer_read(struct cpacketbuffer *buffer, void *buf, uint32_t nu
 
 	/* Ensure we have enough actual data to satisfy the read request, otherwise
 	 * truncate the read request to the amount of data available. */
-	num_available_packets = buffer->num_packets - (cpacketbuffer_free_space(buffer) + 1);
+	num_available_packets = write_index >= read_index ?
+				write_index - read_index :
+				write_index + buffer->num_packets - read_index;
 	if (num_packets > num_available_packets) {
 		num_packets = num_available_packets;
 		num_bytes = num_packets * buffer->packet_size;
 	}
 
-	if (cpacketbuffer_read_index(buffer) + num_packets > buffer->num_packets) {
+	if (read_index + num_packets > buffer->num_packets) {
 		/* The read wraps around the end of the buffer, do it in two parts */
-		uint32_t initial_read_size = (buffer->num_packets - cpacketbuffer_read_index(buffer)) * buffer->packet_size;
+		uint32_t initial_read_size = (buffer->num_packets - read_index) * buffer->packet_size;
 
 		memcpy(buf, read_start, initial_read_size);
 		memcpy((uint8_t *)buf + initial_read_size, buffer->buffer, num_bytes - initial_read_size);
@@ -289,7 +306,7 @@ uint32_t cpacketbuffer_read(struct cpacketbuffer *buffer, void *buf, uint32_t nu
 	/* CPU memory barrier */
 	smp_wmb();
 	/* Update the read index with how many packets we pulled out of the stream */
-	cpacketbuffer_advance_index(buffer->read_index, num_packets, buffer->num_packets);
+	WRITE_ONCE(*buffer->read_index, (read_index + num_packets) % buffer->num_packets);
 	/* CPU memory barrier */
 	smp_wmb();
 
