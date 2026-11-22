@@ -2567,8 +2567,10 @@ static int pid_filemap_info_open(struct inode *inode, struct file *file)
 
 	if (!priv)
 		return -ENOMEM;
-	if (!try_to_get_filemap_fd())
+	if (!try_to_get_filemap_fd()) {
+		seq_release_private(inode, file);
 		return -EINVAL;
+	}
 
 	priv->maps_private.inode = inode;
 	priv->maps_private.mm = proc_mem_open(inode, PTRACE_MODE_READ);
@@ -2597,8 +2599,10 @@ static int pid_filemap_list_open(struct inode *inode, struct file *file)
 
 	if (!priv)
 		return -ENOMEM;
-	if (!try_to_get_filemap_fd())
+	if (!try_to_get_filemap_fd()) {
+		seq_release_private(inode, file);
 		return -EINVAL;
+	}
 
 	priv->maps_private.inode = inode;
 	priv->maps_private.mm = proc_mem_open(inode, PTRACE_MODE_READ);
