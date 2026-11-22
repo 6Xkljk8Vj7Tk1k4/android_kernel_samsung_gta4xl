@@ -1183,6 +1183,9 @@ void pagefault_out_of_memory(void)
 		pr_warn("Huh VM_FAULT_OOM leaked out to the #PF handler. Retrying PF\n");
 }
 
+/* kernel/fork.c: the vendor's app-exit hook (zsmalloc compaction) */
+void call_on_app_mmput_callback(void);
+
 SYSCALL_DEFINE2(process_mrelease, int, pidfd, unsigned int, flags)
 {
 #ifdef CONFIG_MMU
@@ -1241,8 +1244,16 @@ SYSCALL_DEFINE2(process_mrelease, int, pidfd, unsigned int, flags)
 	mmap_read_unlock(mm);
 
 drop_mm:
-	if (mm)
+	if (mm) {
 		mmput(mm);
+		/*
+		 * The victim's last mmput() often happens here, in lmkd,
+		 * where mmput()'s is_app(current) test skips the vendor hook
+		 * that schedules zsmalloc compaction after an app exits.
+		 */
+		if (reap)
+			call_on_app_mmput_callback();
+	}
 put_task:
 	put_task_struct(task);
 put_pid:
