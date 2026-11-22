@@ -4959,6 +4959,7 @@ static int kbase_jd_user_buf_map(struct kbase_context *kctx,
 		alloc->imported.user_buf.dma_addrs[i] = dma_addr;
 		pa[i] = as_tagged(page_to_phys(pages[i]));
 
+		dma_sync_single_for_device(dev, dma_addr, PAGE_SIZE, DMA_BIDIRECTIONAL);
 	}
 
 #ifdef CONFIG_MALI_CINSTR_GWT
@@ -5131,6 +5132,7 @@ static void kbase_jd_user_buf_unmap(struct kbase_context *kctx, struct kbase_mem
 #endif
 
 		size -= imported_size;
+		offset_within_page = 0;
 	}
 #if !MALI_USE_CSF
 	alloc->nents = 0;
