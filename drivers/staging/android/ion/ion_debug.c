@@ -295,7 +295,18 @@ static void ion_debug_buffer_for_heap(struct seq_file *s,
 			"heap", "heaptype", "flags", "size(kb)",
 			"task_comm", "pid", "thread_comm", "tid");
 
-	mutex_lock(&dev->buffer_lock);
+	/*
+	 * Without a seq_file this runs from the OOM notifier, possibly in a
+	 * task that holds buffer_lock and is allocating memory
+	 * (ion_buffer_create(), ion_contig_heap_show_buffers()): never sleep
+	 * on the lock there, or that task waits for itself with oom_lock held.
+	 */
+	if (s) {
+		mutex_lock(&dev->buffer_lock);
+	} else if (!mutex_trylock(&dev->buffer_lock)) {
+		pr_info("ION: buffer list skipped, buffer_lock is busy\n");
+		return;
+	}
 	for (n = rb_first(&dev->buffers); n; n = rb_next(n)) {
 		buffer = rb_entry(n, struct ion_buffer, node);
 
