@@ -2459,14 +2459,12 @@ static ssize_t am_app_launch_show(struct kobject *kobj,
 
 static int notify_app_launch_started(void)
 {
-	trace_printk("am_app_launch started\n");
 	atomic_notifier_call_chain(&am_app_launch_notifier, 1, NULL);
 	return 0;
 }
 
 static int notify_app_launch_finished(void)
 {
-	trace_printk("am_app_launch finished\n");
 	atomic_notifier_call_chain(&am_app_launch_notifier, 0, NULL);
 	return 0;
 }
@@ -2484,8 +2482,6 @@ static ssize_t am_app_launch_store(struct kobject *kobj,
 		return -EINVAL;
 
 	am_app_launch_new = mode ? true : false;
-	trace_printk("am_app_launch %d -> %d\n", am_app_launch,
-		     am_app_launch_new);
 	if (am_app_launch != am_app_launch_new) {
 		if (am_app_launch_new)
 			notify_app_launch_started();

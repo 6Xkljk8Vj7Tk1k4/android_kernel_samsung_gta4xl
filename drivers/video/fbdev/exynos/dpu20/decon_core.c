@@ -105,7 +105,8 @@ void decon_tracing_mark_write(struct decon_device *decon, char id, char *str1, i
 		decon_err("%s:argument fail\n", __func__);
 		return;
 	}
-	trace_puts(buf);
+	/* not trace_puts(): it would make the tracer allocate its buffer at boot */
+	__trace_puts(_THIS_IP_, buf, strlen(buf));
 
 }
 
