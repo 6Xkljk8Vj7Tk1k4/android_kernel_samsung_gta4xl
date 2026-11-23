@@ -2354,7 +2354,7 @@ static int sm5713_fg_get_property(struct power_supply *psy,
 */
 	union power_supply_propval value;
 
-	pr_info("%s: psp = 0x%x\n", __func__, psp);
+	pr_debug("%s: psp = 0x%x\n", __func__, psp);
 	switch (psp) {
 	/* Cell voltage (VCELL, mV) */
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
