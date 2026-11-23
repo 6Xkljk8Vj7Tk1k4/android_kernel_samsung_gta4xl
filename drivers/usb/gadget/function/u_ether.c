@@ -1503,6 +1503,7 @@ void gether_disconnect(struct gether *link)
 	struct eth_dev		*dev = link->ioport;
 //	struct usb_request	*req;
 	struct sk_buff		*skb;
+	unsigned long		flags;
 
 	WARN_ON(!dev);
 	if (!dev)
@@ -1517,12 +1518,20 @@ void gether_disconnect(struct gether *link)
 	/* disable endpoints, forcing (synchronous) completion
 	 * of all pending i/o.  then free the request objects
 	 * and forget about the endpoints.
+	 *
+	 * eth_stop() disables both endpoints under dev->lock and enables
+	 * them again while the carrier is on. Disable the IN endpoint under
+	 * the same lock, so that the two cannot interleave: otherwise
+	 * eth_stop() can enable it again behind our back and it stays
+	 * enabled after the disconnect. port_usb is cleared only after
+	 * usb_ep_disable() has given back the IN requests, because
+	 * tx_complete() dereferences it; once it is NULL, eth_stop() leaves
+	 * the endpoints alone.
 	 */
+	spin_lock_irqsave(&dev->lock, flags);
 	usb_ep_disable(link->in_ep);
-
-	spin_lock(&dev->lock);
 	dev->port_usb = NULL;
-	spin_unlock(&dev->lock);
+	spin_unlock_irqrestore(&dev->lock, flags);
 
 	link->in_ep->desc = NULL;
 
