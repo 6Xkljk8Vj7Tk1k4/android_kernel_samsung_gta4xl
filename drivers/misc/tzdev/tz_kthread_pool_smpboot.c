@@ -166,7 +166,8 @@ static int tz_kthread_pool_wait_for_event(unsigned long cpu)
 	DEFINE_WAIT_FUNC(wait, tz_kthread_pool_wake_function);
 
 	for (;;) {
-		prepare_to_wait(&tz_cmd_waitqueue, &wait, TASK_UNINTERRUPTIBLE);
+		/* TASK_IDLE: a worker with nothing to do is not system load */
+		prepare_to_wait(&tz_cmd_waitqueue, &wait, TASK_IDLE);
 		ret = tz_kthread_pool_should_wake(cpu);
 		if (ret != KTHREAD_SHOULD_SLEEP)
 			break;

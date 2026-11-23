@@ -44,12 +44,19 @@
 #define tz_iwsock_wait_event_interruptible(wq, condition)			\
 	wait_event_interruptible(wq, condition)
 #else
+/*
+ * The kernel threads that serve the secure world (ree_time, the RPMB worker)
+ * wait here for its next request: TASK_IDLE, so that they are not counted as
+ * system load. A task that came in through a system call waits for an answer
+ * and stays TASK_UNINTERRUPTIBLE.
+ */
 #define tz_iwsock_wait_event(wq, condition)					\
 ({										\
 	DEFINE_WAIT_FUNC(wait, woken_wake_function);				\
 	add_wait_queue(&wq, &wait);						\
 	while (!(condition))							\
-		wait_woken(&wait, TASK_UNINTERRUPTIBLE,				\
+		wait_woken(&wait, (current->flags & PF_KTHREAD) ?		\
+			TASK_IDLE : TASK_UNINTERRUPTIBLE,			\
 			MAX_SCHEDULE_TIMEOUT);					\
 	remove_wait_queue(&wq, &wait);						\
 })
@@ -1351,7 +1358,7 @@ static int tz_iwsock_kthread(void *data)
 	(void)data;
 
 	while (!kthread_should_stop()) {
-		wait_event(tz_iwsock_wq,
+		wait_event_idle(tz_iwsock_wq,
 				!circ_buf_is_empty(&swd_sock_events) ||
 				!circ_buf_is_empty(&internal_events_out) ||
 				kthread_should_stop());
