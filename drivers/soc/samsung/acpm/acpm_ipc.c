@@ -565,7 +565,7 @@ void exynos9610_disable_pmu_dbg_intr(void)
 	exynos_pmu_write(PMU_DBGCORE_INTR, reg);
 }
 
-int acpm_ipc_send_data(unsigned int channel_id, struct ipc_config *cfg)
+static int __acpm_ipc_send_data(unsigned int channel_id, struct ipc_config *cfg, bool w_mode)
 {
 	unsigned int front;
 	unsigned int rear;
@@ -649,7 +649,7 @@ retry:
 				timeout_flag = true;
 				break;
 			} else {
-				if (acpm_ipc->w_mode)
+				if (w_mode)
 					usleep_range(50, 100);
 				else
 					cpu_relax();
@@ -689,6 +689,29 @@ retry:
 	}
 
 	return 0;
+}
+
+int acpm_ipc_send_data(unsigned int channel_id, struct ipc_config *cfg)
+{
+	return __acpm_ipc_send_data(channel_id, cfg, false);
+}
+
+/*
+ * For requests that take the firmware long (a frequency change: about a
+ * millisecond): a real-time or deadline task sleeps while it waits for the
+ * answer instead of spinning, as in Samsung's later version of this driver.
+ * That is the governor's thread; it gets the CPU back when its timer fires,
+ * and until then the CPU is free for others. Everybody else, and anybody who
+ * may not sleep, waits as before.
+ */
+int acpm_ipc_send_data_lazy(unsigned int channel_id, struct ipc_config *cfg)
+{
+	bool sleep = (current->policy == SCHED_FIFO || current->policy == SCHED_RR ||
+		      current->policy == SCHED_DEADLINE) &&
+		     system_state == SYSTEM_RUNNING && preemptible() &&
+		     !rcu_preempt_depth();
+
+	return __acpm_ipc_send_data(channel_id, cfg, sleep);
 }
 
 static void log_buffer_init(struct device *dev, struct device_node *node)

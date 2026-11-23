@@ -28,6 +28,7 @@ unsigned int acpm_ipc_request_channel(struct device_node *np, ipc_callback handl
 		unsigned int *id, unsigned int *size);
 unsigned int acpm_ipc_release_channel(struct device_node *np, unsigned int channel_id);
 int acpm_ipc_send_data(unsigned int channel_id, struct ipc_config *cfg);
+int acpm_ipc_send_data_lazy(unsigned int channel_id, struct ipc_config *cfg);
 int acpm_ipc_send_data_sync(unsigned int channel_id, struct ipc_config *cfg);
 int acpm_ipc_set_ch_mode(struct device_node *np, bool polling);
 void exynos_acpm_reboot(void);
@@ -46,6 +47,11 @@ static inline unsigned int acpm_ipc_release_channel(struct device_node *np, unsi
 }
 
 static inline int acpm_ipc_send_data(unsigned int channel_id, struct ipc_config *cfg)
+{
+	return 0;
+}
+
+static inline int acpm_ipc_send_data_lazy(unsigned int channel_id, struct ipc_config *cfg)
 {
 	return 0;
 }
