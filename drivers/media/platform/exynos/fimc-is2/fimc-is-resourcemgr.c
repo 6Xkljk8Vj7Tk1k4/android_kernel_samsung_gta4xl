@@ -373,7 +373,7 @@ static int fimc_is_resourcemgr_allocmem(struct fimc_is_resourcemgr *resourcemgr)
 	minfo->total_size += minfo->pb_lhfd->size;
 #endif
 
-#if defined (ENABLE_VRA)
+#if defined (ENABLE_VRA) && !defined(ENABLE_DYNAMIC_MEM)
 	minfo->pb_vra = CALL_PTR_MEMOP(mem, alloc, mem->default_ctx, VRA_DMA_SIZE, NULL, 0);
 	if (IS_ERR_OR_NULL(minfo->pb_vra)) {
 		err("failed to allocate buffer for VRA");
@@ -382,7 +382,7 @@ static int fimc_is_resourcemgr_allocmem(struct fimc_is_resourcemgr *resourcemgr)
 	minfo->total_size += minfo->pb_vra->size;
 #endif
 
-#if defined (ENABLE_DNR_IN_MCSC)
+#if defined (ENABLE_DNR_IN_MCSC) && !defined(ENABLE_DYNAMIC_MEM)
 	minfo->pb_mcsc_dnr = CALL_PTR_MEMOP(mem, alloc, mem->default_ctx, MCSC_DNR_DMA_SIZE, NULL, 0);
 	if (IS_ERR_OR_NULL(minfo->pb_mcsc_dnr)) {
 		err("failed to allocate buffer for MCSC DNR");
@@ -456,7 +456,8 @@ static int fimc_is_resourcemgr_initmem(struct fimc_is_resourcemgr *resourcemgr)
 	resourcemgr->minfo.kvaddr_lhfd = 0;
 #endif
 
-#if defined(ENABLE_VRA)
+/* with ENABLE_DYNAMIC_MEM: set in fimc_is_resourcemgr_init_dynamic_mem() */
+#if defined(ENABLE_VRA) && !defined(ENABLE_DYNAMIC_MEM)
 	resourcemgr->minfo.dvaddr_vra = CALL_BUFOP(minfo->pb_vra, dvaddr, minfo->pb_vra);
 	resourcemgr->minfo.kvaddr_vra = CALL_BUFOP(minfo->pb_vra, kvaddr, minfo->pb_vra);
 #else
@@ -464,7 +465,7 @@ static int fimc_is_resourcemgr_initmem(struct fimc_is_resourcemgr *resourcemgr)
 	resourcemgr->minfo.kvaddr_vra = 0;
 #endif
 
-#if defined(ENABLE_DNR_IN_MCSC)
+#if defined(ENABLE_DNR_IN_MCSC) && !defined(ENABLE_DYNAMIC_MEM)
 	resourcemgr->minfo.dvaddr_mcsc_dnr = CALL_BUFOP(minfo->pb_mcsc_dnr, dvaddr, minfo->pb_mcsc_dnr);
 	resourcemgr->minfo.kvaddr_mcsc_dnr = CALL_BUFOP(minfo->pb_mcsc_dnr, kvaddr, minfo->pb_mcsc_dnr);
 #else
@@ -497,6 +498,8 @@ p_err:
 }
 
 #ifdef ENABLE_DYNAMIC_MEM
+static int fimc_is_resourcemgr_deinit_dynamic_mem(struct fimc_is_resourcemgr *resourcemgr);
+
 static int fimc_is_resourcemgr_alloc_dynamic_mem(struct fimc_is_resourcemgr *resourcemgr)
 {
 	struct fimc_is_mem *mem = &resourcemgr->mem;
@@ -543,7 +546,39 @@ static int fimc_is_resourcemgr_alloc_dynamic_mem(struct fimc_is_resourcemgr *res
 	info("[RSC] TNR_DMA memory size: %08lx\n", tnr_size);
 #endif
 
+#if defined(ENABLE_VRA)
+	/*
+	 * VRA library memory block: fimc_is_load_bin() sets it up at the first
+	 * get of the ISCHAIN resource, which always comes after this allocation.
+	 */
+	minfo->pb_vra = CALL_PTR_MEMOP(mem, alloc, mem->default_ctx, VRA_DMA_SIZE, NULL, 0);
+	if (IS_ERR_OR_NULL(minfo->pb_vra)) {
+		minfo->pb_vra = NULL;
+		err("failed to allocate buffer for VRA");
+		goto err_free;
+	}
+#endif
+
+#if defined(ENABLE_DNR_IN_MCSC)
+	/*
+	 * MCSC 3DNR buffer: the MCS control parameter takes its address at every
+	 * stream start, after the parameter region has been cleared.
+	 */
+	minfo->pb_mcsc_dnr = CALL_PTR_MEMOP(mem, alloc, mem->default_ctx, MCSC_DNR_DMA_SIZE, NULL, 0);
+	if (IS_ERR_OR_NULL(minfo->pb_mcsc_dnr)) {
+		minfo->pb_mcsc_dnr = NULL;
+		err("failed to allocate buffer for MCSC DNR");
+		goto err_free;
+	}
+#endif
+
 	return 0;
+
+#if defined(ENABLE_VRA) || defined(ENABLE_DNR_IN_MCSC)
+err_free:
+	fimc_is_resourcemgr_deinit_dynamic_mem(resourcemgr);
+	return -ENOMEM;
+#endif
 }
 
 static int fimc_is_resourcemgr_init_dynamic_mem(struct fimc_is_resourcemgr *resourcemgr)
@@ -578,6 +613,25 @@ static int fimc_is_resourcemgr_init_dynamic_mem(struct fimc_is_resourcemgr *reso
 	info("[RSC] TNR_DMA memory kva:0x%1x, dva: %pad\n", kva, &dva);
 #endif
 
+#if defined(ENABLE_VRA)
+	minfo->dvaddr_vra = CALL_BUFOP(minfo->pb_vra, dvaddr, minfo->pb_vra);
+	minfo->kvaddr_vra = CALL_BUFOP(minfo->pb_vra, kvaddr, minfo->pb_vra);
+	if (!minfo->kvaddr_vra) {
+		err("failed to map VRA memory");
+		fimc_is_resourcemgr_deinit_dynamic_mem(resourcemgr);
+		ret = -ENOMEM;
+		goto p_err;
+	}
+	info("[RSC] VRA memory kva:0x%lx, dva: %pad\n", minfo->kvaddr_vra, &minfo->dvaddr_vra);
+#endif
+
+#if defined(ENABLE_DNR_IN_MCSC)
+	/* only the MCSC DMA uses it: no kernel mapping */
+	minfo->dvaddr_mcsc_dnr = CALL_BUFOP(minfo->pb_mcsc_dnr, dvaddr, minfo->pb_mcsc_dnr);
+	minfo->kvaddr_mcsc_dnr = 0;
+	info("[RSC] MCSC_DNR memory dva: %pad\n", &minfo->dvaddr_mcsc_dnr);
+#endif
+
 	info("[RSC] %s done\n", __func__);
 
 p_err:
@@ -588,6 +642,20 @@ static int fimc_is_resourcemgr_deinit_dynamic_mem(struct fimc_is_resourcemgr *re
 {
 	struct fimc_is_minfo *minfo = &resourcemgr->minfo;
 
+#if defined(ENABLE_DNR_IN_MCSC)
+	if (minfo->pb_mcsc_dnr)
+		CALL_VOID_BUFOP(minfo->pb_mcsc_dnr, free, minfo->pb_mcsc_dnr);
+	minfo->pb_mcsc_dnr = NULL;
+	minfo->dvaddr_mcsc_dnr = 0;
+	minfo->kvaddr_mcsc_dnr = 0;
+#endif
+#if defined(ENABLE_VRA)
+	if (minfo->pb_vra)
+		CALL_VOID_BUFOP(minfo->pb_vra, free, minfo->pb_vra);
+	minfo->pb_vra = NULL;
+	minfo->dvaddr_vra = 0;
+	minfo->kvaddr_vra = 0;
+#endif
 #if defined(ENABLE_TNR)
 	CALL_VOID_BUFOP(minfo->pb_tnr, free, minfo->pb_tnr);
 #endif
@@ -595,6 +663,8 @@ static int fimc_is_resourcemgr_deinit_dynamic_mem(struct fimc_is_resourcemgr *re
 		CALL_VOID_BUFOP(minfo->pb_medrc, free, minfo->pb_medrc);
 #endif
 	CALL_VOID_BUFOP(minfo->pb_taaisp, free, minfo->pb_taaisp);
+
+	info("[RSC] %s done\n", __func__);
 
 	return 0;
 }
@@ -1464,6 +1534,9 @@ int fimc_is_resource_get(struct fimc_is_resourcemgr *resourcemgr, u32 rsc_type)
 	struct fimc_is_resource *resource;
 	struct fimc_is_core *core;
 	int i;
+#ifdef ENABLE_DYNAMIC_MEM
+	bool dynamic_mem = false;
+#endif
 
 	FIMC_BUG(!resourcemgr);
 	FIMC_BUG(!resourcemgr->private_data);
@@ -1554,6 +1627,7 @@ int fimc_is_resource_get(struct fimc_is_resourcemgr *resourcemgr, u32 rsc_type)
 			err("fimc_is_resourcemgr_initmem is fail(%d)\n", ret);
 			goto p_err;
 		}
+		dynamic_mem = true;
 #endif
 	}
 
@@ -1713,8 +1787,17 @@ int fimc_is_resource_get(struct fimc_is_resourcemgr *resourcemgr, u32 rsc_type)
 
 	atomic_inc(&resource->rsccount);
 	atomic_inc(&core->rsccount);
+#ifdef ENABLE_DYNAMIC_MEM
+	/* from here on the buffers belong to the core count */
+	dynamic_mem = false;
+#endif
 
 p_err:
+#ifdef ENABLE_DYNAMIC_MEM
+	/* a failed first get leaves the core count at 0: free what it allocated */
+	if (dynamic_mem)
+		fimc_is_resourcemgr_deinit_dynamic_mem(resourcemgr);
+#endif
 	mutex_unlock(&resourcemgr->rsc_lock);
 
 	info("[RSC] rsctype: %d, rsccount: device[%d], core[%d]\n", rsc_type,
