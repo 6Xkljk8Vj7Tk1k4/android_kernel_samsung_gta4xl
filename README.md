@@ -169,16 +169,18 @@ stable branch that has them or ported by hand (noted in the commit message):
   CVE-2024-26640 (TCP receive zero-copy mapped page cache pages) and
   CVE-2026-97958 (a netlink loop under RTNL).
 - **Configuration** as on the 4.14 branch: SLAB freelist randomisation and
-  hardening, `BUG_ON_DATA_CORRUPTION`, `PANIC_ON_OOPS`, restricted `dmesg`, SYN
-  cookies, drivers and protocols the tablet does not have removed; in
-  addition stack variables are zero-initialised. Of the options Android asks
-  of a 4.19 kernel (`android-base.config`), 17 are left out on purpose:
+  hardening, `BUG_ON_DATA_CORRUPTION`, `PANIC_ON_OOPS`, restricted `dmesg`,
+  SYN cookies, drivers and protocols the tablet does not have removed; in
+  addition stack variables are zero-initialised and slab caches are not merged
+  (an object freed too early cannot be handed out again as an object of
+  another cache's kind while its page stays in use). Of the options Android
+  asks of a 4.19 kernel (`android-base.config`), 17 are left out on purpose:
   Mobile IPv6, VTI tunnels, PPP with L2TP and PPTP, DCCP connection tracking
   and the connection tracking helpers Android never attaches. The two it does
   attach when tethering starts, FTP and PPTP, are built: without either one
   netd's rule batch fails and tethering does not come up. The builder
-  repository's tablet test compares the configuration with Android's list
-  and holds the reason for each option that is missing.
+  repository's tablet test compares the configuration with Android's list and
+  holds the reason for each option that is missing.
 
 Every new kernel CVE is checked against the files this configuration actually
 compiles (kernel CNA `vulns.git`, headers through kbuild's `.o.cmd` lists);
