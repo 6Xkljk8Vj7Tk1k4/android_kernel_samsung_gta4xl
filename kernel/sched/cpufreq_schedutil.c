@@ -13,13 +13,19 @@
 
 #include "sched.h"
 
+#include <linux/of.h>
 #include <linux/sched/cpufreq.h>
 #include <trace/events/power.h>
+
+/* Entries of a freqvar-tune node's upscale_ratio_table, see sugov_freqvar_init() */
+#define SUGOV_UPSCALE_MAX	8
 
 struct sugov_tunables {
 	struct gov_attr_set	attr_set;
 	unsigned int		up_rate_limit_us;
 	unsigned int		down_rate_limit_us;
+	/* How the device tree's upscale ratios are used, see get_next_freq() */
+	unsigned int		upscale_mode;
 };
 
 struct sugov_policy {
@@ -47,6 +53,11 @@ struct sugov_policy {
 
 	bool			limits_changed;
 	bool			need_freq_update;
+
+	/* upscale_ratio[i] applies from upscale_freq[i] upwards; 0 entries: mainline's margin */
+	unsigned int		upscale_nr;
+	unsigned int		upscale_freq[SUGOV_UPSCALE_MAX];
+	unsigned int		upscale_ratio[SUGOV_UPSCALE_MAX];
 };
 
 static DEFINE_PER_CPU(struct sugov_policy *, sugov_policy);
@@ -221,7 +232,27 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 	unsigned int freq = arch_scale_freq_invariant() ?
 				policy->max : policy->cur;
 
-	freq = map_util_freq(util, freq, max);
+	if (sg_policy->upscale_nr && sg_policy->tunables->upscale_mode) {
+		/*
+		 * The load to aim at is the ratio the device tree gives for a
+		 * frequency range (map_util_freq() is a ratio of 80 everywhere).
+		 * upscale_mode 1 takes the range of the frequency the policy
+		 * runs at, as the 4.14 kernel of these boards did. A load that
+		 * asks for less than a boundary from above it and for more from
+		 * below then goes back and forth across it. Mode 2 takes the
+		 * range of the frequency the load asks for with a ratio of 80,
+		 * which settles; mode 0 does not use the table.
+		 */
+		unsigned int at = sg_policy->tunables->upscale_mode == 2 ?
+				  map_util_freq(util, freq, max) : policy->cur;
+		int i = sg_policy->upscale_nr - 1;
+
+		while (i > 0 && at < sg_policy->upscale_freq[i])
+			i--;
+		freq = (unsigned long)freq * 100 / sg_policy->upscale_ratio[i] * util / max;
+	} else {
+		freq = map_util_freq(util, freq, max);
+	}
 
 	if (freq == sg_policy->cached_raw_freq && !sg_policy->need_freq_update)
 		return sg_policy->next_freq;
@@ -732,12 +763,32 @@ static ssize_t down_rate_limit_us_store(struct gov_attr_set *attr_set,
 	return count;
 }
 
+static ssize_t upscale_mode_show(struct gov_attr_set *attr_set, char *buf)
+{
+	return sprintf(buf, "%u\n", to_sugov_tunables(attr_set)->upscale_mode);
+}
+
+static ssize_t upscale_mode_store(struct gov_attr_set *attr_set,
+				  const char *buf, size_t count)
+{
+	unsigned int mode;
+
+	if (kstrtouint(buf, 10, &mode) || mode > 2)
+		return -EINVAL;
+
+	to_sugov_tunables(attr_set)->upscale_mode = mode;
+
+	return count;
+}
+
 static struct governor_attr up_rate_limit_us = __ATTR_RW(up_rate_limit_us);
 static struct governor_attr down_rate_limit_us = __ATTR_RW(down_rate_limit_us);
+static struct governor_attr upscale_mode = __ATTR_RW(upscale_mode);
 
 static struct attribute *sugov_attributes[] = {
 	&up_rate_limit_us.attr,
 	&down_rate_limit_us.attr,
+	&upscale_mode.attr,
 	NULL
 };
 
@@ -856,6 +907,66 @@ static void sugov_clear_global_tunables(void)
 		global_tunables = NULL;
 }
 
+/*
+ * The 4.14 kernel of the Exynos 9610/9611 boards took the governor's tuning from
+ * the "freqvar-tune" nodes of the device tree (kernel/sched/ems/freqvar_tune.c
+ * there), one per cluster, and the boards' device trees still have them:
+ *
+ *	up_rate_limit_table, down_rate_limit_table: the rate limits in ms
+ *	upscale_ratio_table: the load, in percent of what the current frequency
+ *		can carry, that the governor aims at: "ratio [frequency ratio]...",
+ *		each ratio from the frequency before it upwards
+ *
+ * The tables can give a value per frequency range. For the rate limits the
+ * value of the lowest range is taken (these boards have one), the ratio is
+ * looked up at every evaluation (the tunable upscale_mode says how; 1, the
+ * 4.14 way, when there is a table). Without a node, or with a table that does
+ * not make sense, the defaults stay. boost_table is not read (0 on these boards).
+ */
+static void sugov_freqvar_init(struct sugov_policy *sg_policy,
+			       struct sugov_tunables *tunables)
+{
+	u32 val[2 * SUGOV_UPSCALE_MAX - 1];
+	struct device_node *dn = NULL;
+	struct cpumask mask;
+	const char *buf;
+	int n, i;
+
+	while ((dn = of_find_node_by_type(dn, "freqvar-tune"))) {
+		if (!of_property_read_string(dn, "shared-cpus", &buf) &&
+		    !cpulist_parse(buf, &mask) &&
+		    cpumask_test_cpu(sg_policy->policy->cpu, &mask))
+			break;
+	}
+	if (!dn)
+		return;
+
+	if (tunables) {
+		if (!of_property_read_u32(dn, "up_rate_limit_table", &val[0]) && val[0])
+			tunables->up_rate_limit_us = val[0] * USEC_PER_MSEC;
+		if (!of_property_read_u32(dn, "down_rate_limit_table", &val[0]) && val[0])
+			tunables->down_rate_limit_us = val[0] * USEC_PER_MSEC;
+	}
+
+	n = of_property_count_u32_elems(dn, "upscale_ratio_table");
+	if (n > 0 && n <= ARRAY_SIZE(val) && (n & 1) &&
+	    !of_property_read_u32_array(dn, "upscale_ratio_table", val, n)) {
+		for (i = 0; i < n; i += 2) {
+			if (val[i] < 10 || val[i] > 100)
+				break;
+			sg_policy->upscale_ratio[i / 2] = val[i];
+			sg_policy->upscale_freq[i / 2] = i ? val[i - 1] : 0;
+		}
+		if (i >= n) {
+			sg_policy->upscale_nr = (n + 1) / 2;
+			if (tunables)
+				tunables->upscale_mode = 1;
+		}
+	}
+
+	of_node_put(dn);
+}
+
 static int sugov_init(struct cpufreq_policy *policy)
 {
 	struct sugov_policy *sg_policy;
@@ -894,6 +1005,7 @@ static int sugov_init(struct cpufreq_policy *policy)
 		}
 		policy->governor_data = sg_policy;
 		sg_policy->tunables = global_tunables;
+		sugov_freqvar_init(sg_policy, NULL);
 
 		gov_attr_set_get(&global_tunables->attr_set, &sg_policy->tunables_hook);
 		goto out;
@@ -907,6 +1019,7 @@ static int sugov_init(struct cpufreq_policy *policy)
 
 	tunables->up_rate_limit_us = cpufreq_policy_transition_delay_us(policy);
 	tunables->down_rate_limit_us = cpufreq_policy_transition_delay_us(policy);
+	sugov_freqvar_init(sg_policy, tunables);
 
 	policy->governor_data = sg_policy;
 	sg_policy->tunables = tunables;
