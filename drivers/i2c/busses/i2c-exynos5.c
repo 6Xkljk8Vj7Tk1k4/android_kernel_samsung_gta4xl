@@ -645,6 +645,18 @@ static void exynos5_i2c_reset(struct exynos5_i2c *i2c)
 static inline void exynos5_i2c_stop(struct exynos5_i2c *i2c)
 {
 	writel(0, i2c->regs + HSI2C_INT_ENABLE);
+	/*
+	 * A latched TRANSFER_DONE keeps the interrupt line high after
+	 * INT_ENABLE is cleared (reading INT_ENABLE back here changed
+	 * nothing).  The handler writes it back only at "out", after
+	 * complete(), and with a slow IP clock (30 MHz on the amplifier's
+	 * bus) the line is still high when the GIC gets the EOI: the
+	 * interrupt comes once more with INT_ENABLE 0, "invalid irq" after
+	 * every write message.  Clear it before complete() and read the
+	 * status back so that the write has reached the controller.
+	 */
+	writel(HSI2C_INT_TRANSFER_DONE, i2c->regs + HSI2C_INT_STATUS);
+	readl(i2c->regs + HSI2C_INT_STATUS);
 
 	complete(&i2c->msg_complete);
 }
@@ -670,8 +682,9 @@ static irqreturn_t exynos5_i2c_irq(int irqno, void *dev_id)
 	}
 
 	if (i2c->msg == NULL || readl(i2c->regs + HSI2C_INT_ENABLE) == 0x0) {
-		pr_err("invalid irq (irqno:%d)\n", irqno);
 		reg_val = readl(i2c->regs + HSI2C_INT_STATUS);
+		dev_err(i2c->dev, "invalid irq (irqno:%d, INT_STATUS 0x%08lx)\n",
+			irqno, reg_val);
 		goto out;
 	}
 
