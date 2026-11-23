@@ -1994,22 +1994,54 @@ static void dwc3_gadget_disable_irq(struct dwc3 *dwc)
 	dwc3_writel(dwc->regs, DWC3_DEVTEN, 0x00);
 }
 
+/*
+ * With GUSB2PHYCFG.SUSPHY or GUSB2PHYCFG.ENBLSLPM set, the controller can
+ * time out entering or leaving the halted state after DCTL.RUN_STOP is
+ * toggled at USB 2.0 speeds. Clear both for the run/stop sequence, as
+ * dwc3_send_gadget_ep_cmd() does for endpoint commands, and return the
+ * bits that were set for dwc3_gadget_u2phy_restore().
+ */
+static u32 dwc3_gadget_u2phy_hold(struct dwc3 *dwc)
+{
+	u32 reg = dwc3_readl(dwc->regs, DWC3_GUSB2PHYCFG(0));
+	u32 saved = reg & (DWC3_GUSB2PHYCFG_SUSPHY | DWC3_GUSB2PHYCFG_ENBLSLPM);
+
+	if (saved)
+		dwc3_writel(dwc->regs, DWC3_GUSB2PHYCFG(0), reg & ~saved);
+
+	return saved;
+}
+
+static void dwc3_gadget_u2phy_restore(struct dwc3 *dwc, u32 saved)
+{
+	u32 reg;
+
+	if (!saved)
+		return;
+
+	reg = dwc3_readl(dwc->regs, DWC3_GUSB2PHYCFG(0));
+	dwc3_writel(dwc->regs, DWC3_GUSB2PHYCFG(0), reg | saved);
+}
+
 static int dwc3_gadget_run_stop(struct dwc3 *dwc, int is_on, int suspend)
 {
 	u32			reg;
 	u32			timeout = 1000;
 	int			retries = 1000;
 	int			ret = 0;
+	u32			saved_config;
 
 	if (pm_runtime_suspended(dwc->dev))
 		return 0;
+
+	saved_config = dwc3_gadget_u2phy_hold(dwc);
 
 	reg = dwc3_readl(dwc->regs, DWC3_DCTL);
 	if (is_on) {
 		ret = dwc3_udc_init(dwc);
 		if (ret) {
 			dev_err(dwc->dev, "failed to reinitialize udc\n");
-			return ret;
+			goto good;
 		}
 
 		dwc3_gadget_enable_irq(dwc);
@@ -2084,7 +2116,7 @@ static int dwc3_gadget_run_stop(struct dwc3 *dwc, int is_on, int suspend)
 
 				} while (--retries);
 
-				return 0;
+				goto good;
 			}
 
 			/* Do nothing in DCTL stop timeout */
@@ -2096,6 +2128,8 @@ static int dwc3_gadget_run_stop(struct dwc3 *dwc, int is_on, int suspend)
 		udelay(1);
 	} while (1);
 good:
+	/* every exit after dwc3_gadget_u2phy_hold() comes here */
+	dwc3_gadget_u2phy_restore(dwc, saved_config);
 	return ret;
 }
 
@@ -2105,9 +2139,12 @@ static int dwc3_gadget_run_stop_vbus(struct dwc3 *dwc, int is_on, int suspend)
 	u32			timeout = 1000;
 	int			retries = 1000;
 	int			ret = 0;
+	u32			saved_config;
 
 	if (pm_runtime_suspended(dwc->dev))
 		return 0;
+
+	saved_config = dwc3_gadget_u2phy_hold(dwc);
 
 	reg = dwc3_readl(dwc->regs, DWC3_DCTL);
 	if (is_on) {
@@ -2115,7 +2152,7 @@ static int dwc3_gadget_run_stop_vbus(struct dwc3 *dwc, int is_on, int suspend)
 		ret = dwc3_udc_init(dwc);
 		if (ret) {
 			dev_err(dwc->dev, "failed to reinitialize udc\n");
-			return ret;
+			goto good;
 		}
 
 		dwc3_gadget_enable_irq(dwc);
@@ -2188,7 +2225,8 @@ static int dwc3_gadget_run_stop_vbus(struct dwc3 *dwc, int is_on, int suspend)
 
 				} while (--retries);
 
-				return -ETIMEDOUT;
+				ret = -ETIMEDOUT;
+				goto good;
 			}
 
 			/* Do nothing in DCTL stop timeout */
@@ -2202,6 +2240,8 @@ static int dwc3_gadget_run_stop_vbus(struct dwc3 *dwc, int is_on, int suspend)
 		udelay(1);
 	} while (1);
 good:
+	/* every exit after dwc3_gadget_u2phy_hold() comes here */
+	dwc3_gadget_u2phy_restore(dwc, saved_config);
 	return ret;
 }
 
