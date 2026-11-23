@@ -24,6 +24,7 @@
 
 u64 __ro_after_init module_alloc_base;
 u16 __initdata memstart_offset_seed;
+static bool __initdata kaslr_seed_made;
 
 static __init u64 get_kaslr_seed(void *fdt)
 {
@@ -66,6 +67,61 @@ out:
 }
 
 /*
+ * Where modules and JIT-compiled BPF programs go, from the seed and from where
+ * the image is going to be (stext, etext, end: its final addresses).
+ */
+static __init void kaslr_module_region(u64 seed, u64 stext, u64 etext, u64 end)
+{
+	u64 module_range;
+
+	if (IS_ENABLED(CONFIG_RANDOMIZE_MODULE_REGION_FULL)) {
+		/*
+		 * Randomize the module region over a 2 GB window covering the
+		 * kernel. This reduces the risk of modules leaking information
+		 * about the address of the kernel itself, but results in
+		 * branches between modules and the core kernel that are
+		 * resolved via PLTs. (Branches between modules will be
+		 * resolved normally.)
+		 */
+		module_range = SZ_2G - (end - stext);
+		module_alloc_base = max(end - SZ_2G, (u64)MODULES_VADDR);
+	} else {
+		/*
+		 * Randomize the module region by setting module_alloc_base to
+		 * a PAGE_SIZE multiple in the range [_etext - MODULES_VSIZE,
+		 * _stext) . This guarantees that the resulting region still
+		 * covers [_stext, _etext], and that all relative branches can
+		 * be resolved without veneers.
+		 */
+		module_range = MODULES_VSIZE - (etext - stext);
+		module_alloc_base = etext - MODULES_VSIZE;
+	}
+
+	/* use the lower 21 bits to randomize the base of the module region */
+	module_alloc_base += (module_range * (seed & ((1 << 21) - 1))) >> 21;
+	module_alloc_base &= PAGE_MASK;
+}
+
+/*
+ * With RANDOMIZE_BASE_SEED_FALLBACK the seed is made in head.S before the
+ * first page tables and the image is at its final address already when this
+ * is called from __primary_switched(): what is left to do is what
+ * kaslr_early_init() does besides placing the image. seed is 0 when head.S
+ * could not make one; then kaslr_early_init() has run.
+ */
+asmlinkage void __init kaslr_fallback_apply(u64 seed)
+{
+	if (!seed)
+		return;
+
+	/* use the top 16 bits to randomize the linear region */
+	memstart_offset_seed = seed >> 48;
+
+	kaslr_module_region(seed, (u64)_stext, (u64)_etext, (u64)_end);
+	kaslr_seed_made = true;
+}
+
+/*
  * This routine will be executed with the kernel mapped at its default virtual
  * address, and if it returns successfully, the kernel will be remapped, and
  * start_kernel() will be executed from a randomized virtual offset. The
@@ -76,7 +132,7 @@ out:
 u64 __init kaslr_early_init(u64 dt_phys)
 {
 	void *fdt;
-	u64 seed, offset, mask, module_range;
+	u64 seed, offset, mask;
 	const u8 *cmdline, *str;
 	int size;
 
@@ -140,36 +196,19 @@ u64 __init kaslr_early_init(u64 dt_phys)
 		 */
 		return offset % SZ_2G;
 
-	if (IS_ENABLED(CONFIG_RANDOMIZE_MODULE_REGION_FULL)) {
-		/*
-		 * Randomize the module region over a 2 GB window covering the
-		 * kernel. This reduces the risk of modules leaking information
-		 * about the address of the kernel itself, but results in
-		 * branches between modules and the core kernel that are
-		 * resolved via PLTs. (Branches between modules will be
-		 * resolved normally.)
-		 */
-		module_range = SZ_2G - (u64)(_end - _stext);
-		module_alloc_base = max((u64)_end + offset - SZ_2G,
-					(u64)MODULES_VADDR);
-	} else {
-		/*
-		 * Randomize the module region by setting module_alloc_base to
-		 * a PAGE_SIZE multiple in the range [_etext - MODULES_VSIZE,
-		 * _stext) . This guarantees that the resulting region still
-		 * covers [_stext, _etext], and that all relative branches can
-		 * be resolved without veneers.
-		 */
-		module_range = MODULES_VSIZE - (u64)(_etext - _stext);
-		module_alloc_base = (u64)_etext + offset - MODULES_VSIZE;
-	}
-
-	/* use the lower 21 bits to randomize the base of the module region */
-	module_alloc_base += (module_range * (seed & ((1 << 21) - 1))) >> 21;
-	module_alloc_base &= PAGE_MASK;
+	kaslr_module_region(seed, (u64)_stext + offset, (u64)_etext + offset,
+			    (u64)_end + offset);
 
 	__flush_dcache_area(&module_alloc_base, sizeof(module_alloc_base));
 	__flush_dcache_area(&memstart_offset_seed, sizeof(memstart_offset_seed));
 
 	return offset;
 }
+
+static int __init kaslr_seed_report(void)
+{
+	if (kaslr_seed_made)
+		pr_info("KASLR: the seed was made in the kernel, from the device tree blob and the counter\n");
+	return 0;
+}
+core_initcall(kaslr_seed_report);

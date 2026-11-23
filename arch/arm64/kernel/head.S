@@ -114,6 +114,7 @@ pe_header:
 	 *
 	 *  Register   Scope                      Purpose
 	 *  x21        stext() .. start_kernel()  FDT pointer passed at boot in x0
+	 *  x22        stext() .. start_kernel()  KASLR seed made in stext(), or 0
 	 *  x23        stext() .. start_kernel()  physical misalignment/KASLR offset
 	 *  x28        __create_page_tables()     callee preserved temp register
 	 *  x19/x20    __primary_switch()         callee preserved temp registers
@@ -126,6 +127,15 @@ ENTRY(stext)
 	adrp	x23, __PHYS_OFFSET
 	and	x23, x23, MIN_KIMG_ALIGN - 1	// KASLR offset, defaults to 0
 	bl	set_cpu_boot_mode_flag
+#ifdef CONFIG_RANDOMIZE_BASE_SEED_FALLBACK
+	bl	__kaslr_make_seed		// x22 = seed, 0 if there is none
+	cbz	x22, 0f
+	and	x0, x22, #(((1 << (VA_BITS - 2)) - 1) & ~(SZ_2M - 1))
+	mov	x1, #(1 << (VA_BITS - 3))
+	add	x0, x0, x1			// where kaslr_early_init() would
+	orr	x23, x23, x0			// put the image
+0:
+#endif
 	bl	__create_page_tables
 	/*
 	 * The following calls CPU setup code, see arch/arm64/mm/proc.S for
@@ -136,6 +146,65 @@ ENTRY(stext)
 	bl	__cpu_setup			// initialise processor
 	b	__primary_switch
 ENDPROC(stext)
+
+#ifdef CONFIG_RANDOMIZE_BASE_SEED_FALLBACK
+/*
+ * A KASLR seed for a boot loader that passes none: a hash of the device tree
+ * blob as the boot loader left it in memory (its command line is in there)
+ * and of the counter before and after the pass over the blob. It is made
+ * here, before the page tables, so that the image is mapped at its final
+ * address the first time. The usual way, kaslr_early_init() from
+ * __primary_switched(), finds its seed with the MMU on and then has to turn
+ * the MMU off to map the image again; a hypervisor that watches the kernel's
+ * translation registers may not let that pass.
+ *
+ * x21 = FDT. Returns the seed in x22: never 0 for a blob that can be read at
+ * this point, 0 if it is not at an 8-byte boundary (the MMU is off, memory is
+ * read as device memory, an unaligned load may fault), has no magic or an
+ * absurd size. Then x23 stays as it is and the usual way is taken.
+ * Clobbers x0, x1, x3, x4, x5.
+ */
+	.macro	kaslr_mix, h, c1, c2		// the finishing step of MurmurHash3
+	eor	\h, \h, \h, lsr #33
+	mul	\h, \h, \c1
+	eor	\h, \h, \h, lsr #33
+	mul	\h, \h, \c2
+	eor	\h, \h, \h, lsr #33
+	.endm
+
+__kaslr_make_seed:
+	mov	x22, #0
+	tst	x21, #7
+	b.ne	9f
+	ldr	w0, [x21]			// magic: d0 0d fe ed in the blob
+	mov	w1, #0x0dd0
+	movk	w1, #0xedfe, lsl #16
+	cmp	w0, w1
+	b.ne	9f
+	ldr	w0, [x21, #4]			// total size, big endian
+	rev	w0, w0
+	cmp	x0, #MAX_FDT_SIZE
+	b.hi	9f
+	lsr	x0, x0, #3			// in 8-byte words: up to 7 bytes at
+	cbz	x0, 9f				// the end stay out of the hash
+	ldr	x3, =0xff51afd7ed558ccd
+	ldr	x4, =0xc4ceb9fe1a85ec53
+	mov	x1, x21
+	mrs	x22, cntvct_el0
+	kaslr_mix x22, x3, x4
+1:	ldr	x5, [x1], #8
+	eor	x22, x22, x5
+	kaslr_mix x22, x3, x4
+	subs	x0, x0, #1
+	b.ne	1b
+	mrs	x5, cntvct_el0
+	eor	x22, x22, x5
+	kaslr_mix x22, x3, x4
+	cbnz	x22, 9f
+	mov	x22, #1				// 0 means "no seed"
+9:	ret
+ENDPROC(__kaslr_make_seed)
+#endif
 
 /*
  * Preserve the arguments passed by the bootloader in x0 .. x3
@@ -456,6 +525,10 @@ __primary_switched:
 	ldp	x29, x30, [sp], #16		// we must enable KASLR, return
 	ret					// to __primary_switch()
 0:
+#ifdef CONFIG_RANDOMIZE_BASE_SEED_FALLBACK
+	mov	x0, x22				// the seed made in stext(), or 0
+	bl	kaslr_fallback_apply		// the rest of what a seed is for
+#endif
 #endif
 	add	sp, sp, #16
 	mov	x29, #0

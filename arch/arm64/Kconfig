@@ -1489,6 +1489,36 @@ config RANDOMIZE_BASE
 
 	  If unsure, say N.
 
+config RANDOMIZE_BASE_SEED_FALLBACK
+	bool "Make the KASLR seed in the kernel"
+	depends on RANDOMIZE_BASE && !KASAN && !CPU_BIG_ENDIAN
+	help
+	  The seed for the address of the kernel image is the value the boot
+	  loader puts into /chosen/kaslr-seed. A boot loader that does not do
+	  that leaves the kernel at its link address at every start, with
+	  RANDOMIZE_BASE set and nothing to show for it.
+
+	  With this option the kernel makes the seed itself, before it builds
+	  its first page tables: a hash of the device tree blob as the boot
+	  loader left it in memory, whose command line as a rule carries
+	  values that are unique to the device and others that change from
+	  one start to the next, and of the counter before and after the
+	  pass over the blob. The image is mapped at its final address the
+	  first time, so the MMU is never turned off again on the way, which
+	  a hypervisor above the kernel may not allow.
+
+	  That is no random number generator. Whoever can read the command
+	  line and the clocks of the running system can narrow the seed
+	  down. It takes the fixed, known address away from everyone who
+	  cannot, an attacker from the network above all.
+
+	  A seed from the boot loader is not looked for (it is part of the
+	  blob and so of the hash), and "nokaslr" on the command line has no
+	  effect. If the blob cannot be read that early, the usual way is
+	  taken.
+
+	  If unsure, say N.
+
 config RANDOMIZE_MODULE_REGION_FULL
 	bool "Randomize the module region over a 4 GB range"
 	depends on RANDOMIZE_BASE
