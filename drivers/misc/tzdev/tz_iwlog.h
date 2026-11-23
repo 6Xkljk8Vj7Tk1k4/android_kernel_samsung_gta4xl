@@ -14,9 +14,12 @@
 #ifndef __TZ_IWLOG_H__
 #define __TZ_IWLOG_H__
 
+#include <linux/types.h>
+
 #if defined(CONFIG_TZLOG)
 int tz_iwlog_initialize(void);
 void tz_iwlog_read_buffers(void);
+void tz_iwlog_get_counts(unsigned int cpu, uint32_t *write_count, uint32_t *read_count);
 #else
 static inline int tz_iwlog_initialize(void)
 {
@@ -25,6 +28,13 @@ static inline int tz_iwlog_initialize(void)
 
 static inline void tz_iwlog_read_buffers(void)
 {
+}
+
+static inline void tz_iwlog_get_counts(unsigned int cpu, uint32_t *write_count,
+		uint32_t *read_count)
+{
+	*write_count = 0;
+	*read_count = 0;
 }
 #endif
 

@@ -461,6 +461,9 @@ struct sock_desc *tz_iwsock_socket(unsigned int is_kern)
 
 	sd->is_kern = is_kern;
 
+	sd->owner_pid = task_tgid_nr(current);
+	get_task_comm(sd->owner_comm, current);
+
 	sd->state = TZ_SK_NEW;
 
 	if ((ret = tz_iwsock_publish_sd(sd)) <= 0) {
@@ -671,6 +674,7 @@ int tz_iwsock_connect(struct sock_desc *sd, const char *name, int flags)
 		goto wrong_state;
 	case TZ_SK_NEW:
 		sd->state = TZ_SK_CONNECT_IN_PROGRESS;
+		strcpy(sd->listen_name, name);
 		break;
 	case TZ_SK_LISTENING:
 		ret = -EINVAL;
@@ -1203,6 +1207,96 @@ void tz_iwsock_check_notifications(void)
 
 	if (!circ_buf_is_empty(&swd_sock_events))
 		wake_up(&tz_iwsock_wq);
+}
+
+static const char *tz_iwsock_state_name(unsigned int state)
+{
+	static const char *const names[] = {
+		[TZ_SK_NEW] = "new",
+		[TZ_SK_LISTENING] = "listening",
+		[TZ_SK_CONNECT_IN_PROGRESS] = "connecting",
+		[TZ_SK_CONNECTED] = "connected",
+		[TZ_SK_RELEASED] = "released",
+	};
+
+	return state < ARRAY_SIZE(names) ? names[state] : "?";
+}
+
+static const char *tz_iwsock_buf_state_name(unsigned int state)
+{
+	static const char *const names[] = {
+		[BUF_SK_CLOSED] = "closed",
+		[BUF_SK_CONNECTED] = "connected",
+		[BUF_SK_NEW] = "new",
+	};
+
+	return state < ARRAY_SIZE(names) ? names[state] : "?";
+}
+
+/*
+ * For diagnostics: the event buffers and every socket the secure world may be
+ * waiting on, with the bytes not yet read from each of its buffers (rd: from
+ * the secure world to us, wr: from us to the secure world). Takes only the
+ * socket map lock, never a socket's own lock (connect and accept sleep with it).
+ */
+int tz_iwsock_snprint_state(char *buf, size_t size)
+{
+	struct iwd_sock_buf_head *iwd_buf;
+	struct sock_desc *sd;
+	unsigned int state;
+	int id, len;
+
+	if (tz_iwsock_state != READY)
+		return scnprintf(buf, size, "iwsock not ready\n");
+
+	smp_rmb();
+
+	len = scnprintf(buf, size, "iwsock events: nwd->swd %zu swd->nwd %zu internal %zu bytes\n",
+			circ_buf_bytes_used(&nwd_sock_events),
+			circ_buf_bytes_used(&swd_sock_events),
+			circ_buf_bytes_used(&internal_events_out));
+
+	mutex_lock(&tzdev_sock_map_lock);
+	idr_for_each_entry(&tzdev_sock_map, sd, id) {
+		state = READ_ONCE(sd->state);
+		len += scnprintf(buf + len, size - len, "sock %d %s %s %d %s \"%.*s\"",
+				id, tz_iwsock_state_name(state),
+				sd->is_kern ? "kernel" : "user",
+				sd->owner_pid, sd->owner_comm,
+				(int)sizeof(sd->listen_name), sd->listen_name);
+
+		/* The shared buffer is complete and stays mapped in these states */
+		iwd_buf = READ_ONCE(sd->iwd_buf);
+		switch (state) {
+		case TZ_SK_LISTENING:
+		case TZ_SK_CONNECTED:
+		case TZ_SK_RELEASED:
+			if (!iwd_buf || !sd->read_buf.circ_buf || !sd->write_buf.circ_buf)
+				break;
+			len += scnprintf(buf + len, size - len,
+					" nwd %s swd %s rd %zu wr %zu",
+					tz_iwsock_buf_state_name(iwd_buf->nwd_state),
+					tz_iwsock_buf_state_name(iwd_buf->swd_state),
+					circ_buf_bytes_used(&sd->read_buf),
+					circ_buf_bytes_used(&sd->write_buf));
+			/*
+			 * Only a connected socket has an OOB buffer. A connect
+			 * that failed leaves the pointer to its unmapped one
+			 * behind, and a later listen does not replace it.
+			 */
+			if (state == TZ_SK_CONNECTED && sd->oob_buf.circ_buf)
+				len += scnprintf(buf + len, size - len, " oob %zu",
+						circ_buf_bytes_used(&sd->oob_buf));
+			break;
+		default:
+			break;
+		}
+
+		len += scnprintf(buf + len, size - len, "\n");
+	}
+	mutex_unlock(&tzdev_sock_map_lock);
+
+	return len;
 }
 
 static void tz_iwsock_process_notifications(void)

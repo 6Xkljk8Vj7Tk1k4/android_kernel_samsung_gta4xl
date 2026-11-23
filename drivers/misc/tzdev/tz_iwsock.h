@@ -14,6 +14,8 @@
 #ifndef __TZ_IWSOCK_H__
 #define __TZ_IWSOCK_H__
 
+#include <linux/sched.h>
+
 #include "lib/circ_buf.h"
 #include "tz_cred.h"
 
@@ -75,7 +77,11 @@ struct sock_desc {
 	enum tz_endpoint_state state;
 	atomic_t ref_count;
 	struct mutex lock;
+	/* Name listened on, or for a connecting socket the name connected to */
 	char listen_name[TZ_FILE_NAME_LEN];
+	/* Process and thread that created the socket, for diagnostics */
+	pid_t owner_pid;
+	char owner_comm[TASK_COMM_LEN];
 	unsigned int is_kern;
 	struct mm_struct *mm;
 	struct tz_cmsghdr_cred cred;
@@ -90,6 +96,7 @@ void tz_iwsock_fini(void);
 void tz_iwsock_check_notifications(void);
 int tz_iwsock_need_swd_entry(void);
 void tz_iwsock_kernel_panic_handler(void);
+int tz_iwsock_snprint_state(char *buf, size_t size);
 
 struct sock_desc *tz_iwsock_socket(unsigned int is_kern);
 int tz_iwsock_getsockopt(struct sock_desc *sd, int level,

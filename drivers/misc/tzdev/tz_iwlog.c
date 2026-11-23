@@ -148,6 +148,15 @@ void tz_iwlog_read_buffers(void)
 		wake_up(&tz_iwlog_wq);
 }
 
+/* For diagnostics: the counters of the secure world's log buffer of one CPU. */
+void tz_iwlog_get_counts(unsigned int cpu, uint32_t *write_count, uint32_t *read_count)
+{
+	struct tz_iwcbuf *buf = per_cpu(tz_iwlog_buffer, cpu);
+
+	*write_count = buf ? buf->write_count : 0;
+	*read_count = buf ? buf->read_count : 0;
+}
+
 int tz_iwlog_initialize(void)
 {
 	struct task_struct *th;
