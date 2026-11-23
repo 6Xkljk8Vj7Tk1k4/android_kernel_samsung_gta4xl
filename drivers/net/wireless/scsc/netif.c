@@ -1310,6 +1310,7 @@ static int  slsi_set_mac_address(struct net_device *dev, void *addr)
 	SLSI_ETHER_COPY(dev->dev_addr, sa->sa_data);
 	sdev->mac_changed = true;
 	ndev_vif->ipaddress = 0;
+	ndev_vif->ipv4_bcast = 0;
 
 	/* Interface is pulled down before mac address is changed.
 	 * First scan initiated after interface is brought up again, should be treated as initial scan, for faster reconnection.

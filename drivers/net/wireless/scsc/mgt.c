@@ -4273,9 +4273,18 @@ int  slsi_set_multicast_packet_filters(struct slsi_dev *sdev, struct net_device 
 	pattern_desc[num_pattern_desc].pattern[1] = 0x00;
 	num_pattern_desc++;
 
-	pattern_desc[num_pattern_desc].offset = sizeof(struct ethhdr) + offsetof(struct iphdr, daddr); /* iphdr->daddr starts with 1110 */
+	/* iphdr->daddr starts with 111: 224.0.0.0/3, which is the multicast
+	 * range, the reserved class E and the limited broadcast address
+	 * 255.255.255.255. An access point that converts group-addressed
+	 * frames to unicast does it for broadcast too, and a device that
+	 * announces itself to 255.255.255.255 every second then wakes the
+	 * host every second (Android's APF drops these "regardless of L2",
+	 * b/30231088; this chip has no APF). Only when the interface itself
+	 * has a class E address is the pattern left at 1110, multicast alone.
+	 */
+	pattern_desc[num_pattern_desc].offset = sizeof(struct ethhdr) + offsetof(struct iphdr, daddr);
 	pattern_desc[num_pattern_desc].mask_length = 1;
-	pattern_desc[num_pattern_desc].mask[0] = 0xf0;
+	pattern_desc[num_pattern_desc].mask[0] = IN_BADCLASS(ntohl(ndev_vif->ipaddress)) ? 0xf0 : 0xe0;
 	pattern_desc[num_pattern_desc].pattern[0] = 0xe0; /* 224 */
 	num_pattern_desc++;
 
@@ -4347,6 +4356,49 @@ int  slsi_set_multicast_packet_filters(struct slsi_dev *sdev, struct net_device 
 	return ret;
 }
 
+/* Broadcast to unicast conversion, the subnet's directed broadcast address:
+ * the companion of the IPv4 filter in slsi_set_multicast_packet_filters(),
+ * which takes 255.255.255.255. Opted out while the host sleeps; the filter is
+ * deleted when the interface has no such address.
+ */
+static int slsi_set_bcast_to_unicast_packet_filter(struct slsi_dev *sdev, struct net_device *dev)
+{
+	struct netdev_vif *ndev_vif = netdev_priv(dev);
+	struct slsi_mlme_pattern_desc pattern_desc[3];
+	struct slsi_mlme_pkt_filter_elem pkt_filter_elem;
+	u8 pkt_filters_len = 0;
+	u8 num_pattern_desc = 0;
+	__be32 bcast = ndev_vif->ipv4_bcast;
+
+	if (!bcast || bcast == ndev_vif->ipaddress || ipv4_is_lbcast(bcast)) {
+		slsi_create_packet_filter_element(SLSI_BCAST_TO_UNICAST_IPV4_ID, 0, 0, NULL,
+						  &pkt_filter_elem, &pkt_filters_len);
+		return slsi_mlme_set_packet_filter(sdev, dev, pkt_filters_len, 1, &pkt_filter_elem);
+	}
+
+	pattern_desc[num_pattern_desc].offset = 0; /* destination mac address */
+	pattern_desc[num_pattern_desc].mask_length = ETH_ALEN;
+	SLSI_ETHER_COPY(pattern_desc[num_pattern_desc].mask, addr_mask);
+	SLSI_ETHER_COPY(pattern_desc[num_pattern_desc].pattern, dev->dev_addr);
+	num_pattern_desc++;
+
+	SET_ETHERTYPE_PATTERN_DESC(pattern_desc[num_pattern_desc], ETH_P_IP);
+	num_pattern_desc++;
+
+	pattern_desc[num_pattern_desc].offset = sizeof(struct ethhdr) + offsetof(struct iphdr, daddr);
+	pattern_desc[num_pattern_desc].mask_length = sizeof(bcast);
+	memcpy(pattern_desc[num_pattern_desc].mask, addr_mask, sizeof(bcast));
+	memcpy(pattern_desc[num_pattern_desc].pattern, &bcast, sizeof(bcast));
+	num_pattern_desc++;
+
+	slsi_create_packet_filter_element(SLSI_BCAST_TO_UNICAST_IPV4_ID,
+					  FAPI_PACKETFILTERMODE_OPT_OUT_SLEEP,
+					  num_pattern_desc, pattern_desc,
+					  &pkt_filter_elem, &pkt_filters_len);
+
+	return slsi_mlme_set_packet_filter(sdev, dev, pkt_filters_len, 1, &pkt_filter_elem);
+}
+
 int  slsi_clear_packet_filters(struct slsi_dev *sdev, struct net_device *dev)
 {
 	struct netdev_vif *ndev_vif = netdev_priv(dev);
@@ -4388,6 +4440,7 @@ int  slsi_clear_packet_filters(struct slsi_dev *sdev, struct net_device *dev)
 #if IS_ENABLED(CONFIG_IPV6)
 	num_filters++; /* MULTI_TO_UNI IPv6 OPT OUT */
 #endif
+	num_filters++; /* BCAST_TO_UNI IPv4 OPT OUT */
 	pkt_filter_elem = kmalloc((num_filters * sizeof(struct slsi_mlme_pkt_filter_elem)), GFP_KERNEL);
 	if (!pkt_filter_elem) {
 		SLSI_NET_ERR(dev, "ERROR Memory allocation failure");
@@ -4435,6 +4488,9 @@ int  slsi_clear_packet_filters(struct slsi_dev *sdev, struct net_device *dev)
 					  &pkt_filter_elem[num_filters], &pkt_filters_len);
 	num_filters++;
 #endif
+	slsi_create_packet_filter_element(SLSI_BCAST_TO_UNICAST_IPV4_ID, 0, 0, NULL,
+					  &pkt_filter_elem[num_filters], &pkt_filters_len);
+	num_filters++;
 	ret = slsi_mlme_set_packet_filter(sdev, dev, pkt_filters_len, num_filters, pkt_filter_elem);
 	kfree(pkt_filter_elem);
 	return ret;
@@ -4450,6 +4506,10 @@ int  slsi_update_packet_filters(struct slsi_dev *sdev, struct net_device *dev)
 	WARN_ON(ndev_vif->vif_type != FAPI_VIFTYPE_STATION);
 
 	ret = slsi_set_multicast_packet_filters(sdev, dev);
+	if (ret)
+		return ret;
+
+	ret = slsi_set_bcast_to_unicast_packet_filter(sdev, dev);
 	if (ret)
 		return ret;
 

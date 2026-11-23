@@ -605,8 +605,9 @@ enum slsi_filter_id {
 #endif
 	SLSI_MULTI_TO_UNICAST_IPV4_ID,						/* 0x86 / 0x89 */
 	SLSI_MULTI_TO_UNICAST_IPv6_ID,						/* 0x87 / 0x8a */
-	SLSI_ALL_ARP_FILTER_ID,							/* 0x88 / 0x8b */
-	SLSI_REGD_MC_FILTER_ID,							/* 0x89 / 0x8c */
+	SLSI_BCAST_TO_UNICAST_IPV4_ID,						/* 0x88 / 0x8b */
+	SLSI_ALL_ARP_FILTER_ID,							/* 0x89 / 0x8c */
+	SLSI_REGD_MC_FILTER_ID,							/* 0x8a / 0x8d */
 };
 #else
 enum slsi_filter_id {
@@ -623,8 +624,9 @@ enum slsi_filter_id {
 	SLSI_OPT_IN_TCP6_FILTER_ID,						/* 0x87 */
 #endif
 	SLSI_MULTI_TO_UNICAST_IPV4_ID,						/* 0x85 / 0x88*/
-	SLSI_ALL_ARP_FILTER_ID,							/* 0x86 / 0x89 */
-	SLSI_REGD_MC_FILTER_ID,							/* 0x87 / 0x8a */
+	SLSI_BCAST_TO_UNICAST_IPV4_ID,						/* 0x86 / 0x89 */
+	SLSI_ALL_ARP_FILTER_ID,							/* 0x87 / 0x8a */
+	SLSI_REGD_MC_FILTER_ID,							/* 0x88 / 0x8b */
 };
 #endif
 
@@ -981,6 +983,8 @@ struct netdev_vif {
 	 * But not for the Arp or trace %pI4
 	 */
 	__be32                      ipaddress;
+	/* Directed broadcast address of ipaddress's subnet, 0 if it has none */
+	__be32                      ipv4_bcast;
 
 #if IS_ENABLED(CONFIG_IPV6)
 	struct in6_addr             ipv6address;

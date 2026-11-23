@@ -254,6 +254,9 @@ static int slsi_dev_inetaddr_changed(struct notifier_block *nb, unsigned long da
 		}
 	}
 #endif
+	/* For slsi_set_bcast_to_unicast_packet_filter(); /31 and /32 have none */
+	ndev_vif->ipv4_bcast = ifa->ifa_prefixlen < 31 ?
+			       (ifa->ifa_address | ~ifa->ifa_mask) : 0;
 	slsi_ip_address_changed(sdev, dev, ifa->ifa_address);
 	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
 	return 0;

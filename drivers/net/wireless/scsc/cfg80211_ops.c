@@ -1654,6 +1654,7 @@ int slsi_del_station(struct wiphy *wiphy, struct net_device *dev,
 
 		/* All STA related packets and info should already have been flushed */
 		ndev_vif->ipaddress = cpu_to_be32(0);
+		ndev_vif->ipv4_bcast = 0;
 
 		if (ndev_vif->ap.p2p_gc_keys_set) {
 			slsi_wake_unlock(&sdev->wlan_wl);
