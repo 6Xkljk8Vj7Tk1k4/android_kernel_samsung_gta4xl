@@ -682,9 +682,17 @@ static irqreturn_t exynos5_i2c_irq(int irqno, void *dev_id)
 	}
 
 	if (i2c->msg == NULL || readl(i2c->regs + HSI2C_INT_ENABLE) == 0x0) {
+		/*
+		 * With nothing latched this is the interrupt of a transfer that
+		 * exynos5_i2c_stop() has already completed and acknowledged: the
+		 * line was still high when the interrupt was taken. Harmless.
+		 */
 		reg_val = readl(i2c->regs + HSI2C_INT_STATUS);
-		dev_err(i2c->dev, "invalid irq (irqno:%d, INT_STATUS 0x%08lx)\n",
-			irqno, reg_val);
+		if (reg_val)
+			dev_err(i2c->dev, "invalid irq (irqno:%d, INT_STATUS 0x%08lx)\n",
+				irqno, reg_val);
+		else
+			dev_dbg(i2c->dev, "irq %d with nothing latched\n", irqno);
 		goto out;
 	}
 
